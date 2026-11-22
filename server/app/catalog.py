@@ -58,12 +58,14 @@ def card(t, a, prog=None):
     w, hdr = a.get('w', 0), a.get('hdr')
     labels = (['4K'] if w >= 3000 else []) + (['Dolby Vision'] if hdr == 'dovi' else ['HDR'] if hdr else [])
     real = t['imdb'].startswith('tt')
-    return {'imdb': t['imdb'], 'type': t['type'] or 'movie', 'name': t['name'], 'nameRo': None, 'year': t['year'],
+    out = {'imdb': t['imdb'], 'type': t['type'] or 'movie', 'name': t['name'], 'nameRo': None, 'year': t['year'],
             'rating': t['imdb_rating'], 'genres': db.jl(t['genres'], []), 'tmdb': None, 'rt': None, 'mc': None,
             'poster': real, 'backdrop': real, 'logo': real and bool(t['logo_url']), 'labels': labels, 'has4k': w >= 3000,
             'dv': hdr == 'dovi', 'hdr': bool(hdr), 'atmos': False, 'ro': a.get('ro', False), 'rosub': a.get('rosub', False), 'fl': False,
-            'new': bool(a.get('added')) and time.time() - a['added'] < 72 * 3600, 'newVersion': False, 'inPlex': False,
+            'new': bool(a.get('added')) and time.time() - a['added'] < 72 * 3600, 'newVersion': False,
             'downloading': False, 'progress': prog, 'certAge': None, 'trailer': None, 'inLibrary': bool(a.get('n'))}
+    out['inPlex'] = out['inLibrary']  # TV: 'playable here'
+    return out
 
 
 def hero(t, a):

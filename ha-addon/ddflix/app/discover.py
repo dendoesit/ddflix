@@ -113,7 +113,7 @@ def home_rows(typ=None):
                                            'Documentary')]}[typ]
     for t, g in gs:
         label = GENRE_RO.get(g, g) if typ else ('Seriale' if t == 'series' else 'Filme') + ': ' + GENRE_RO.get(g, g)
-        rows.append(('g:%s:%s' % (t, g), label, 'genre', t, g))
+        rows.append(('g:' + g, label, 'genre', t, g))  # TV turns 'g:<Genre>' rows into genre tiles
     return rows
 
 

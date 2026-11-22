@@ -99,10 +99,13 @@
     var a = document.createElement('a'); a.className = 'card'; a.href = '#/t/' + encodeURIComponent(c.imdb);
     var pct = c.play && c.play.pct ? c.play.pct : c.progress && c.progress.pct;
     a.innerHTML = (c.rank ? '<span class="rkn">' + c.rank + '</span><div class="rkb">' : '') + '<div class="pw">' + (c.poster ? '<img loading="lazy" alt="" src="' + img('poster', c.imdb, 300) + '">' : '<div class="ph">' + esc(c.name) + '</div>') +
+      (c.backdrop && !c.rank ? '<img class="bd" alt="" data-src="' + img('backdrop', c.imdb, 780) + '"><div class="bdn">' + esc(c.name) + '</div>' : '') +
       (c.inLibrary ? '<span class="nas">NAS</span>' : '') + score(c.rating) +
       (pct ? '<div class="bar"><i style="width:' + Math.round(pct * 100) + '%"></i></div>' : '') + '</div>' +
       '<div class="t">' + esc(c.name) + (c.year ? ' · ' + c.year : '') + '</div>' + (c.rank ? '</div>' : '');
     if (c.rank) a.className += ' rkc';
+    var bd = a.querySelector('.bd');
+    if (bd) a.addEventListener('mouseenter', function () { if (!bd.src) { bd.onload = function () { bd.className += ' ok'; }; bd.src = bd.getAttribute('data-src'); } });
     return a;
   }
   // server row link "#/browse?type=series&genre=Crime" -> our page "#/series/Crime"
@@ -130,7 +133,7 @@
   }
 
   function loginView(err) {
-    app.innerHTML = '<form class="login"><h1>DDFLIX</h1><input type="password" name="pw" placeholder="Parola" autocomplete="current-password" required>' +
+    app.innerHTML = '<form class="login"><img src="icon.png" alt="" width="56" height="56" style="border-radius:14px"><span class="wm">DDFLIX</span><input type="password" name="pw" placeholder="Parola" autocomplete="current-password" required>' +
       (SAME ? '<input type="hidden" name="api" value="">' : '<details><summary class="mut">Server</summary><input name="api" placeholder="https://…" value="' + esc(API) + '"></details>') +
       '<button class="btn red" style="width:100%;justify-content:center">Intră</button><p class="err">' + esc(err || '') + '</p></form>';
     var f = app.querySelector('form');
@@ -148,6 +151,26 @@
     movie: ['Action', 'Adventure', 'Animation', 'Biography', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Mystery', 'Romance', 'Sci-Fi', 'Sport', 'Thriller', 'War', 'Western']
   };
   var GRO = { Action: 'Acțiune', Adventure: 'Aventură', Animation: 'Animație', Biography: 'Biografic', Comedy: 'Comedie', Crime: 'Crimă', Documentary: 'Documentar', Drama: 'Dramă', Family: 'Familie', Fantasy: 'Fantasy', History: 'Istoric', Horror: 'Horror', Mystery: 'Mister', 'Reality-TV': 'Reality', Romance: 'Romantic', 'Sci-Fi': 'SF', Sport: 'Sport', Thriller: 'Thriller', War: 'Război', Western: 'Western' };
+  function metaLine(h) {
+    var p = [h.type === 'series' ? 'Serial' : 'Film'];
+    if (h.genres && h.genres[0]) p.push(GRO[h.genres[0]] || h.genres[0]);
+    if (h.year) p.push(h.year + (h.yearEnd && h.yearEnd !== h.year ? '–' + h.yearEnd : ''));
+    if (h.seasons) p.push(typeof h.seasons === 'number' ? (h.seasons === 1 ? '1 sezon' : h.seasons + ' sezoane') : (h.seasons.filter(function (s) { return s.season > 0; }).length + ' sezoane'));
+    if (h.runtime && h.type !== 'series') p.push(Math.floor(h.runtime / 60) ? Math.floor(h.runtime / 60) + ' h ' + (h.runtime % 60) + ' min' : h.runtime + ' min');
+    return p.join('  •  ');
+  }
+  function heroBox(h, isTitle) {
+    var d = document.createElement('section'); d.className = 'hero' + (isTitle ? ' title' : '');
+    d.innerHTML = (h.backdrop !== false ? '<img class="hbg" alt="" src="' + img('backdrop', h.imdb, 1280) + '">' : '') + '<div class="scrim"></div>' +
+      '<div class="hc"><div class="hlogo">' + (h.logo ? '<img alt="' + esc(h.name) + '" src="' + img('logo', h.imdb, 500) + '">' : '<h1 class="hn">' + esc(h.name) + '</h1>') + '</div>' +
+      '<div class="hmeta">' + esc(metaLine(h)) + '</div><p class="hsyn">' + esc(h.description || '') + '</p></div><div class="hbtns"></div><div class="hchips"></div>';
+    var lg = d.querySelector('.hlogo img'); if (lg) lg.onerror = function () { lg.parentNode.innerHTML = '<h1 class="hn">' + esc(h.name) + '</h1>'; };
+    var bg = d.querySelector('.hbg'); if (bg) bg.onerror = function () { bg.remove(); };
+    var ch = d.querySelector('.hchips');
+    (h.labels || []).forEach(function (l) { ch.insertAdjacentHTML('beforeend', '<span class="pill">' + esc(l === '4K' ? 'Disponibil în 4K' : l) + '</span>'); });
+    if (h.rating) ch.insertAdjacentHTML('beforeend', '<span class="pill imdb">IMDb ' + Number(h.rating).toFixed(1) + '</span>');
+    return d;
+  }
   // Netflix-like page header: "Seriale  [Genuri v]"
   function typeHead(type, genre) {
     var sec = type === 'series' ? 'series' : 'movies', h = document.createElement('div'); h.className = 'ghead';
@@ -162,17 +185,39 @@
     app.innerHTML = '<p class="pad mut">Se încarcă…</p>';
     Promise.all([q('/api/home' + (type ? '?type=' + type : '')), q('/api/continue').catch(function () { return { items: [] }; }), q('/api/mylist').catch(function () { return { items: [] }; })]).then(function (r) {
       app.innerHTML = '';
-      var hs = r[0].hero || [], h = hs[Math.floor(Math.random() * Math.min(3, hs.length))];
       if (type) app.appendChild(typeHead(type));
+      var hs = r[0].hero || [], h = hs[Math.floor(Math.random() * Math.min(4, hs.length))];
       if (h) {
-        var d = document.createElement('section'); d.className = 'hero'; d.style.backgroundImage = 'url("' + img('backdrop', h.imdb, 1280) + '")';
-        d.innerHTML = '<div class="in"><h1>' + esc(h.name) + '</h1><div class="mut">' + [h.year, (h.genres || []).slice(0, 3).map(function (g) { return GRO[g] || g; }).join(', ')].filter(Boolean).map(esc).join(' · ') + ' ' + score(h.rating) + '</div><p>' + esc(h.description) + '</p><a class="btn" href="#/t/' + encodeURIComponent(h.imdb) + '">ⓘ Detalii</a></div>';
-        app.appendChild(d);
+        var hb = heroBox(h), bt = hb.querySelector('.hbtns');
+        if (h.inLibrary) { var pl = document.createElement('a'); pl.className = 'btn'; pl.href = '#/t/' + encodeURIComponent(h.imdb); pl.textContent = '▶  Redă'; bt.appendChild(pl); }
+        var mi = document.createElement('a'); mi.className = 'btn sec'; mi.href = '#/t/' + encodeURIComponent(h.imdb); mi.textContent = 'Mai multe informații'; bt.appendChild(mi);
+        app.appendChild(hb);
       }
+      // genre rows become tiles under the hero (like the TV)
+      var tiles = document.createElement('div'); tiles.className = 'tiles';
+      var addTile = function (label, href) { var t = document.createElement('a'); t.className = 'tile'; t.href = href; t.textContent = label; tiles.appendChild(t); };
+      if (!PROF || PROF.kind !== 'kids') {
+        if (type !== 'movie') addTile('Toate serialele', '#/series/all');
+        if (type !== 'series') addTile('Toate filmele', '#/movies/all');
+      }
+      var rest = [];
+      (r[0].rows || []).forEach(function (x) {
+        if ((x.key || '').indexOf('g:') === 0) addTile(x.title.replace(/^(Seriale|Filme): /, ''), pageLink(x.link));
+        else rest.push(x);
+      });
+      if (tiles.children.length) app.appendChild(tiles);
       var keep = function (items) { return type ? (items || []).filter(function (c) { return c.type === type; }) : items; };
-      [row('Continuă', keep(r[1].items)), row('Lista mea', keep(r[2].items))].concat((r[0].rows || []).map(function (x) { return row(x.title, x.items, x.link); }))
+      [row('Continuă vizionarea', keep(r[1].items)), row('Lista mea', keep(r[2].items))].concat(rest.map(function (x) { return row(x.title, x.items, x.link); }))
         .forEach(function (s) { if (s) app.appendChild(s); });
       if (!app.children.length) app.innerHTML = '<p class="pad mut">Nimic de arătat încă.</p>';
+    }, fail);
+  }
+  function mylist() {
+    app.innerHTML = '<div class="ghead"><h1>Lista mea</h1></div><div class="grid"></div>';
+    var grid = app.querySelector('.grid');
+    q('/api/mylist').then(function (d) {
+      (d.items || []).forEach(function (c) { grid.appendChild(card(c)); });
+      if (!grid.children.length) app.insertAdjacentHTML('beforeend', '<p class="pad mut">Lista e goală. Apasă „+ Lista mea” pe un serial sau film.</p>');
     }, fail);
   }
   // grid of everything in a genre (not only the NAS), sorted popular / IMDb score / newest, paged
@@ -225,16 +270,15 @@
       var t = r[0], p = r[1], files = p.files || [], byEp = {};
       files.forEach(function (f) { byEp[f.season + ':' + f.episode] = f; });
       app.innerHTML = '';
-      var hero = document.createElement('section'); hero.className = 'hero'; if (t.backdrop) hero.style.backgroundImage = 'url("' + img('backdrop', imdb, 1280) + '")';
-      var tags = (t.labels || []).map(function (l) { return '<span class="tag">' + esc(l) + '</span>'; }).join('');
-      hero.innerHTML = '<div class="in"><h1>' + esc(t.name) + '</h1><div class="mut">' + [t.year, (t.genres || []).map(function (g) { return GRO[g] || g; }).join(', ')].filter(Boolean).map(esc).join(' · ') + ' ' + score(t.rating) + ' ' + tags + (t.imdbUrl ? ' <a class="mut" target="_blank" rel="noopener" href="' + esc(t.imdbUrl) + '">IMDb ↗</a>' : '') + '</div>' +
-        '<p>' + esc(t.description) + '</p><div class="acts"></div></div>';
+      var hero = heroBox(t, true);
+      if (t.imdbUrl) hero.querySelector('.hchips').insertAdjacentHTML('beforeend', '<a class="pill" target="_blank" rel="noopener" href="' + esc(t.imdbUrl) + '">pe IMDb ↗</a>');
       app.appendChild(hero);
-      var acts = hero.querySelector('.acts');
+      var acts = hero.querySelector('.hbtns');
       if (p.next) { var b = document.createElement('button'); b.className = 'btn'; b.textContent = '▶ ' + (p.next.action || 'Redă'); b.onclick = function () { play(p.next.id, t.name); }; acts.appendChild(b); }
       var ml = document.createElement('button'); ml.className = 'btn sec'; ml.textContent = '+ Lista mea'; ml.onclick = function () { q('/api/mylist/' + encodeURIComponent(imdb), { method: 'POST', body: {} }).then(function () { toast('Adăugat în Lista mea'); }); }; acts.appendChild(ml);
-      if (t.type === 'movie' && !files.length) acts.appendChild(dlBtn('⬇ Descarcă', { imdb: imdb }));
-      (t.downloads || []).forEach(function (d) { if (d.state !== 'done') { var s = document.createElement('div'); s.className = 'mut'; s.innerHTML = '⬇ ' + esc(d.name) + ' — ' + Math.round(d.progress * 100) + '%<div class="prog"><i style="width:' + Math.round(d.progress * 100) + '%"></i></div>'; hero.querySelector('.in').appendChild(s); } });
+      DL.items = DL.items.filter(function (x) { return x.imdb !== imdb; }).concat(t.downloads || []);
+      if (t.type === 'movie' && !files.length) acts.appendChild(dlFor(imdb + '||') ? dlEl(imdb + '||') : dlBtn('⬇  Descarcă', { imdb: imdb }));
+      else if (t.type === 'series' && (t.downloads || []).some(function (x) { return x.state !== 'done'; })) acts.appendChild(dlEl(imdb + '||'));
 
       if (t.type === 'series' && t.seasons && t.seasons.length) {
         var tabs = document.createElement('div'); tabs.className = 'tabs'; app.appendChild(tabs);
@@ -245,15 +289,15 @@
           tabs.innerHTML = ''; box.innerHTML = '';
           seasons.forEach(function (s) { var b = document.createElement('button'); b.textContent = 'Sezonul ' + s.season + (s.available ? ' · ' + s.available + '/' + s.episodes.length : ''); b.className = s.season === cur ? 'on' : ''; b.onclick = function () { cur = s.season; draw(); }; tabs.appendChild(b); });
           var se = seasons.filter(function (s) { return s.season === cur; })[0]; if (!se) return;
-          if (se.available < se.episodes.length) { var pk = document.createElement('div'); pk.className = 'pad'; pk.appendChild(dlBtn('⬇ Descarcă tot sezonul ' + se.season, { imdb: imdb, season: se.season }, !se.packs.length)); box.appendChild(pk); }
+          if (se.available < se.episodes.length) { var pk = document.createElement('div'); pk.className = 'pad'; var sk = imdb + '|' + se.season + '|'; pk.appendChild(DL.items.some(function (x) { return x.imdb === imdb && x.season === se.season && x.episode == null; }) ? dlEl(sk) : dlBtn('⬇  Descarcă tot sezonul ' + se.season, { imdb: imdb, season: se.season }, !se.packs.length, false, sk)); box.appendChild(pk); }
           se.episodes.forEach(function (e) {
             var f = byEp[se.season + ':' + e.episode], d = document.createElement('div'); d.className = 'ep';
             d.innerHTML = (e.thumb ? '<img loading="lazy" alt="" src="' + img('episode', imdb, 320).replace('/img/episode/' + encodeURIComponent(imdb), '/img/episode/' + encodeURIComponent(imdb) + '/' + se.season + '/' + e.episode) + '">' : '<div class="ph"></div>') +
               '<div class="b"><h4>' + e.episode + '. ' + esc(e.name) + ' ' + score(e.rating) + '</h4><p>' + esc(e.overview) + '</p><div class="a"></div></div>';
             var a = d.querySelector('.a');
             if (f) { var b = document.createElement('button'); b.className = 'btn sm'; b.textContent = '▶ ' + (f.position > 30 && !f.watched ? 'Reia' : 'Redă'); b.onclick = function () { play(f.id, t.name); }; a.appendChild(b); }
-            else if (e.download) a.innerHTML = '<span class="mut">⬇ ' + Math.round(e.download.progress * 100) + '%</span>';
-            else if (e.versions && e.versions.length) a.appendChild(dlBtn('⬇ Descarcă', { imdb: imdb, release_id: e.versions[0] }, false, true));
+            else if (e.download || dlFor(imdb + '|' + se.season + '|' + e.episode)) a.appendChild(dlEl(imdb + '|' + se.season + '|' + e.episode));
+            else if (e.versions && e.versions.length) a.appendChild(dlBtn('⬇ Descarcă', { imdb: imdb, release_id: e.versions[0] }, false, true, imdb + '|' + se.season + '|' + e.episode));
             else a.innerHTML = '<span class="mut">' + (e.released && e.released > new Date().toISOString().slice(0, 10) ? 'Apare pe ' + esc(e.released) : 'Indisponibil') + '</span>';
             box.appendChild(d);
           });
@@ -271,32 +315,78 @@
         app.appendChild(rs);
       }
       if ((t.similar || []).length) app.appendChild(row('Asemănătoare', t.similar));
+      dlPoll();
     }, fail);
   }
-  function dlBtn(label, body, disabled, small) {
+  var DL = { items: [], t: null, seen: null };
+  function dlInfo(x) {
+    if (x.state === 'done') return '✓ Descărcat — gata de vizionat';
+    if (x.state === 'queued') return 'În coadă…';
+    if (x.state === 'paused') return 'Pe pauză · ' + Math.round(x.progress * 100) + '%';
+    if (x.state === 'error') return 'Eroare la descărcare';
+    var eta = x.eta > 0 && x.eta < 8640000 ? ' · ' + (x.eta >= 3600 ? Math.floor(x.eta / 3600) + ' h ' : '') + Math.ceil((x.eta % 3600) / 60) + ' min rămase' : '';
+    return '⬇ ' + Math.round(x.progress * 100) + '%' + (x.speed ? ' · ' + (x.speed / 1048576).toFixed(1) + ' MB/s' : '') + eta;
+  }
+  function dlFor(k) {
+    var p = k.split('|');
+    return DL.items.filter(function (i) {
+      if (i.imdb !== p[0]) return false;
+      if (p[1] === '') return true;
+      if (String(i.season) !== p[1]) return false;
+      return p[2] === '' || i.episode == null || String(i.episode) === p[2];
+    }).sort(function (a, b) { return (a.state === 'done') - (b.state === 'done'); })[0];
+  }
+  function dlEl(k) { var e = document.createElement('div'); e.className = 'dlp'; e.setAttribute('data-dlk', k); e.hidden = true; paintOne(e); return e; }
+  function paintOne(el) {
+    var x = dlFor(el.getAttribute('data-dlk'));
+    if (!x) { if (!el.getAttribute('data-started')) el.hidden = true; return; }
+    el.hidden = false; el.className = 'dlp' + (x.state === 'done' ? ' done' : '');
+    el.innerHTML = '<span>' + esc(dlInfo(x)) + '</span>' + (x.state === 'done' ? '' : '<i><b style="width:' + Math.max(2, Math.round(x.progress * 100)) + '%"></b></i>');
+  }
+  function dlPoll(now) {
+    clearTimeout(DL.t);
+    if (!TOKEN || !PROF || PROF.kind === 'kids') return;
+    q('/api/downloads').then(function (d) {
+      var items = d.items || [], active = items.filter(function (x) { return x.state !== 'done' && x.state !== 'error'; });
+      if (DL.seen) items.forEach(function (x) { if (x.state === 'done' && DL.seen[x.id] && DL.seen[x.id] !== 'done') toast('✓ Gata de vizionat: ' + x.name); });
+      DL.seen = {}; items.forEach(function (x) { DL.seen[x.id] = x.state; });
+      DL.items = items;
+      var b = document.querySelector('#dl-tab .bdg'); if (b) { b.hidden = !active.length; b.textContent = active.length; }
+      [].forEach.call(document.querySelectorAll('[data-dlk]'), paintOne);
+      DL.t = setTimeout(dlPoll, active.length ? 3000 : 30000);
+    }, function () { DL.t = setTimeout(dlPoll, 30000); });
+  }
+  function dlBtn(label, body, disabled, small, key) {
     var b = document.createElement('button'); b.className = 'btn red' + (small ? ' sm' : ''); b.textContent = label; b.disabled = !!disabled;
     if (disabled) b.title = 'Nu există pachet de sezon; descarcă episoadele';
     b.onclick = function () {
       b.disabled = true; b.textContent = '…';
-      q('/api/tv/download', { body: body }).then(function (d) { b.textContent = '✓ Pornit'; toast('Descarc: ' + d.release.name); }, function (e) { b.disabled = false; b.textContent = label; toast(e.message); });
+      q('/api/tv/download', { body: body }).then(function (d) {
+        toast('Descărcarea a pornit. Progresul îl vezi aici și în Descărcări.');
+        var k = key || (body.imdb + '|' + (body.season != null ? body.season : '') + '|');
+        var el = dlEl(k); el.hidden = false; el.setAttribute('data-started', '1'); el.innerHTML = '<span>⬇ Pornește… ' + esc(d.release && d.release.name || '') + '</span><i><b style="width:2%"></b></i>';
+        b.replaceWith(el); dlPoll();
+      }, function (e) { b.disabled = false; b.textContent = label; toast(e.message); });
     };
     return b;
   }
 
   function downloads() {
-    app.innerHTML = '<div class="pad"><h2 style="margin:0">Descărcări</h2></div><div class="list"></div>';
+    app.innerHTML = '<div class="ghead"><h1>Descărcări</h1></div><p class="pad mut" style="padding-top:6px">Se descarcă pe NAS, în folderul Plex. Se actualizează singur.</p><div class="list"></div>';
     var list = app.querySelector('.list');
     var tick = function () {
       if (!location.hash.startsWith('#/downloads')) return;
       q('/api/downloads').then(function (d) {
-        list.innerHTML = d.items.length ? '' : '<p class="pad mut">Nimic în descărcare.</p>';
+        list.innerHTML = d.items.length ? '' : '<p class="pad mut">Nimic în descărcare. Caută un serial sau un film și apasă „Descarcă”.</p>';
         d.items.forEach(function (x) {
-          var e = document.createElement('div'); e.className = 'rel';
-          e.innerHTML = '<div style="flex:1"><div class="n">' + esc(x.name) + '</div><div class="m">' + esc(x.state) + ' · ' + Math.round(x.progress * 100) + '% · ' + gb(x.size) + (x.speed ? ' · ' + (x.speed / 1048576).toFixed(1) + ' MB/s' : '') + '</div><div class="prog"><i style="width:' + Math.round(x.progress * 100) + '%"></i></div></div>';
+          var e = document.createElement('div'); e.className = 'dl';
+          var se = x.season != null ? 'Sezonul ' + x.season + (x.episode != null ? ', episodul ' + x.episode : ' (tot sezonul)') : '';
+          e.innerHTML = (x.imdb ? '<img alt="" src="' + img('poster', x.imdb, 200) + '">' : '') + '<div class="i"><div class="n">' + esc(se || x.name) + '</div><div class="r">' + esc(x.name) + ' · ' + gb(x.size) + '</div>' +
+            '<div class="s">' + esc(dlInfo(x)) + '</div>' + (x.state === 'done' ? '' : '<div class="prog"><i style="width:' + Math.max(2, Math.round(x.progress * 100)) + '%"></i></div>') + '</div>';
           if (x.imdb) e.onclick = function () { location.hash = '#/t/' + encodeURIComponent(x.imdb); };
           list.appendChild(e);
         });
-        setTimeout(tick, 4000);
+        setTimeout(tick, 3000);
       }, fail);
     };
     tick();
@@ -379,10 +469,12 @@
     var me = document.getElementById('me'); me.innerHTML = avatar(PROF); me.title = PROF.name + ' · schimbă profilul';
     document.getElementById('dl-tab').hidden = PROF.kind === 'kids';
     document.body.classList.toggle('kids', PROF.kind === 'kids');
+    if (!DL.t) dlPoll();
     window.scrollTo(0, 0);
     if (parts[0] === 'search') return search(decodeURIComponent(parts[1] || ''));
     if (parts[0] === 't') return title(decodeURIComponent(parts[1]));
     if (parts[0] === 'downloads') return downloads();
+    if (parts[0] === 'mylist') return mylist();
     if (parts[0] === 'series' || parts[0] === 'movies') {
       var ty = parts[0] === 'series' ? 'series' : 'movie', rest = (parts[1] || '').split('?'), so = /sort=(\w+)/.exec(h);
       if (rest[0]) return genreView(ty, decodeURIComponent(rest[0]), so && so[1]);
