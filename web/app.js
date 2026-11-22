@@ -582,14 +582,83 @@
       v.appendChild(tr); setTimeout(function () { if (v.textTracks[0]) v.textTracks[0].mode = 'showing'; }, 50);
     });
   }
-  var scrub = document.getElementById('pscrub'), dragging = false;
+  var scrub = document.getElementById('pscrub'), dragging = false, SMAX = 1000;
+  function seekTo(t) { var st = P.st; if (!st) return; if (st.sid) start_(t, st.audio); else P.v.currentTime = t; }
+  // trickplay: thumbnail above the scrubber (sheet = cols x rows frames, one every `interval` s)
+  var thumb = document.getElementById('pthumb');
+  function showThumb(t, frac) {
+    var st = P.st, tp = st && st.m.trickplay;
+    thumb.querySelector('span').textContent = fmtT(t);
+    var ti = thumb.querySelector('.pti');
+    if (tp) {
+      var per = tp.cols * tp.rows, i = Math.floor(t / tp.interval), n = Math.min(tp.sheets, Math.floor(i / per) + 1), k = i % per;
+      ti.style.display = 'block'; ti.style.width = tp.w + 'px'; ti.style.height = tp.h + 'px';
+      ti.style.backgroundImage = 'url("' + authUrl(tp.url + n + '.jpg' + (PROF && PROF.header ? '?p=' + encodeURIComponent(PROF.header) : '')) + '")';
+      ti.style.backgroundPosition = (-(k % tp.cols) * tp.w) + 'px ' + (-Math.floor(k / tp.cols) * tp.h) + 'px';
+    } else ti.style.display = 'none';
+    thumb.hidden = false;
+    var w = scrub.getBoundingClientRect().width, tw = thumb.offsetWidth || 160;
+    thumb.style.left = Math.max(0, Math.min(w - tw, frac * w - tw / 2)) + 'px';
+  }
+  scrub.addEventListener('mousemove', function (e) {
+    if (!P.st) return; var r = scrub.getBoundingClientRect(), fr = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    showThumb(fr * P.st.m.duration, fr);
+  });
+  scrub.addEventListener('mouseleave', function () { if (!dragging) thumb.hidden = true; });
   P.v.addEventListener('timeupdate', function () {
     if (!P.st) return; var pos = curPos(), dur = P.st.m.duration || 1;
     document.getElementById('pcur').textContent = fmtT(pos);
-    if (!dragging) scrub.value = Math.round(pos / dur * 100);
+    if (!dragging) scrub.value = Math.round(pos / dur * SMAX);
+    markersUi(pos, dur);
   });
-  scrub.addEventListener('input', function () { dragging = true; document.getElementById('pcur').textContent = fmtT(scrub.value / 100 * P.st.m.duration); });
-  scrub.addEventListener('change', function () { dragging = false; var t = scrub.value / 100 * P.st.m.duration; if (P.st.sid) start_(t, P.st.audio); else P.v.currentTime = t; });
+  scrub.addEventListener('input', function () {
+    dragging = true; var fr = scrub.value / SMAX, t = fr * P.st.m.duration;
+    document.getElementById('pcur').textContent = fmtT(t); showThumb(t, fr);
+  });
+  scrub.addEventListener('change', function () { dragging = false; thumb.hidden = true; seekTo(scrub.value / SMAX * P.st.m.duration); });
+
+  // skip intro / skip credits / next episode (same rules as the TV app: chapters or audio fingerprints from the server)
+  var skipB = document.getElementById('pskip'), nextC = document.getElementById('pnext');
+  function sane(mk, dur) {
+    mk = mk || {}; var o = { intro: null, credits: null }, i = mk.intro, c = mk.credits;
+    if (i && i.end != null && i.end - i.start >= 10 && i.end - i.start <= 300 && i.start < 900 && (i.conf == null || i.conf >= 0.5)) o.intro = i;
+    if (c && c.start != null && (!dur || c.start > 0.5 * dur) && (c.conf == null || c.conf >= 0.5)) o.credits = c;
+    return o;
+  }
+  function markersUi(t, dur) {
+    var st = P.st, mk = sane(st.m.markers, dur), next = st.m.nextMedia;
+    var inIntro = mk.intro && t >= mk.intro.start && t < mk.intro.end - 2;
+    var inCred = mk.credits && t >= mk.credits.start && (mk.credits.end == null || t < mk.credits.end);
+    var left = dur - t;
+    if (inIntro) { skipB.hidden = false; skipB.textContent = 'Sari peste intro'; skipB.onclick = function () { seekTo(mk.intro.end); skipB.hidden = true; }; }
+    else if (inCred && !next && mk.credits.end != null && dur - mk.credits.end > 20) { skipB.hidden = false; skipB.textContent = 'Sari peste generic'; skipB.onclick = function () { seekTo(mk.credits.end); }; }
+    else skipB.hidden = true;
+    var showNext = next && !st.nextDismissed && (inCred || left <= 20 || (!mk.credits && left <= 120 && left > 20 && 'pill'));
+    if (showNext) {
+      if (nextC.hidden) {
+        nextC.hidden = false;
+        nextC.querySelector('.pn-t').textContent = (next.name || 'Episodul următor');
+        st.nextAt = Date.now() + 7000;
+        nextC.classList.toggle('pill', showNext === 'pill');
+      }
+      var f = nextC.querySelector('.pn-f');
+      if (showNext !== 'pill') {
+        var p = Math.min(1, 1 - (st.nextAt - Date.now()) / 7000); f.style.width = Math.round(p * 100) + '%';
+        if (p >= 1 && !P.v.paused) playNext();
+      } else f.style.width = '0';
+    } else nextC.hidden = true;
+  }
+  function playNext() {
+    var st = P.st; if (!st || !st.m.nextMedia) return;
+    var nx = st.m.nextMedia, name = st.name;
+    q('/api/progress', { body: { mediaId: st.mid, position: st.m.duration, duration: st.m.duration, watched: true, credits: true } }).catch(function () {});
+    if (st.sid) q('/api/play/' + st.sid, { method: 'DELETE' }).catch(function () {});
+    if (P.hls) { P.hls.destroy(); P.hls = null; }
+    nextC.hidden = true; skipB.hidden = true;
+    play(nx.id, name, 0);
+  }
+  document.getElementById('pnext-go').onclick = playNext;
+  document.getElementById('pnext-x').onclick = function () { if (P.st) P.st.nextDismissed = true; nextC.hidden = true; };
   setInterval(function () {
     if (P.st && !P.el.hidden && !P.v.paused) q('/api/progress', { body: { mediaId: P.st.mid, position: curPos(), duration: P.st.m.duration, sub: P.st.sub || null, audio: P.st.audio } }).catch(function () {});
   }, 10000);
@@ -598,7 +667,7 @@
     q('/api/progress', { body: { mediaId: st.mid, position: curPos(), duration: st.m.duration, sub: st.sub || null } }).catch(function () {});
     if (st.sid) q('/api/play/' + st.sid, { method: 'DELETE' }).catch(function () {});
     if (P.hls) { P.hls.destroy(); P.hls = null; }
-    P.v.pause(); P.v.removeAttribute('src'); P.v.load(); P.el.hidden = true; P.st = null; route();
+    P.v.pause(); P.v.removeAttribute('src'); P.v.load(); P.el.hidden = true; P.st = null; skipB.hidden = true; nextC.hidden = true; thumb.hidden = true; route();
   };
 
   function fail(e) { app.innerHTML = '<p class="pad err">' + esc(e.message) + '</p>'; }

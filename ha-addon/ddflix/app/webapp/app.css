@@ -194,3 +194,16 @@ input.q{width:100%;font:500 18px var(--font);padding:14px 18px;border-radius:999
 .hero .mute{position:absolute;right:16px;top:16px;width:44px;height:44px;border-radius:50%;border:2px solid #ffffff99;background:#0006;color:#fff;font-size:18px;cursor:pointer;z-index:3}
 @media(min-width:900px){.hero .mute{right:28px;top:28px}}
 .dl .da{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+
+/* player: trickplay thumbnail, skip intro, next episode */
+.pscw{position:relative;flex:1;display:flex}.pscw input{flex:1}
+.pthumb{position:absolute;bottom:26px;left:0;padding:4px;background:#000d;border:2px solid #fff;border-radius:10px;text-align:center;pointer-events:none;z-index:4}
+.pthumb[hidden]{display:none}.pthumb .pti{background-repeat:no-repeat;border-radius:6px;max-width:42vw}
+.pthumb span{display:block;color:#fff;font:700 13px/20px var(--font)}
+.pskip{position:absolute;right:24px;bottom:84px;z-index:5;border:2px solid #ffffffcc;background:#000a;color:#fff;font:700 16px var(--font);padding:12px 22px;border-radius:10px;cursor:pointer}
+.pskip:hover{background:#fff;color:#000}.pskip[hidden]{display:none}
+.pnext{position:absolute;right:24px;bottom:84px;z-index:5;background:#141418f2;border:1px solid #ffffff33;border-radius:16px;padding:16px 18px;max-width:min(420px,90vw);box-shadow:0 10px 40px #000a}
+.pnext[hidden]{display:none}.pnext .pn-t{font:700 16px/1.3 var(--font);margin-bottom:10px}
+.pnext .pn-b{display:flex;flex-wrap:wrap;gap:4px}
+#pnext-go{position:relative;overflow:hidden}#pnext-go .pn-f{position:absolute;left:0;top:0;bottom:0;width:0;background:#0000002e;transition:width .25s linear}#pnext-go span{position:relative}
+.pnext.pill #pnext-x{display:none}

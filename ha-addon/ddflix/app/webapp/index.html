@@ -36,7 +36,9 @@
     <select id="paudio" aria-label="Audio"></select>
     <select id="psub" aria-label="Subtitrare"></select>
   </div>
-  <div class="pseek"><span id="pcur">0:00</span><input id="pscrub" type="range" min="0" max="100" value="0" step="1" aria-label="Poziție"><span id="pdur">0:00</span></div>
+  <button id="pskip" class="pskip" hidden>Sari peste intro</button>
+  <div id="pnext" class="pnext" hidden><div class="pn-t"></div><div class="pn-b"><button class="btn" id="pnext-go"><i class="pn-f"></i><span>▶  Episodul următor</span></button><button class="btn sec" id="pnext-x">Vezi genericul</button></div></div>
+  <div class="pseek"><span id="pcur">0:00</span><div class="pscw"><div id="pthumb" class="pthumb" hidden><div class="pti"></div><span></span></div><input id="pscrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Poziție"></div><span id="pdur">0:00</span></div>
 </div>
 <div id="toast"></div>
 <script src="config.js"></script>

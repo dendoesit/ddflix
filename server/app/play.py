@@ -10,7 +10,7 @@ import time
 
 from aiohttp import web
 
-from . import catalog, config, db, library
+from . import catalog, config, db, library, markers
 from .util import body, jerr, jok
 
 log = logging.getLogger('play')
@@ -182,7 +182,7 @@ async def media(request):
             nxt['name'] = '%s S%d E%d' % (t['name'] if t else '', fs[i + 1]['season'], fs[i + 1]['episode'])
     rt = db.q1('SELECT value FROM rating WHERE profile_id=? AND imdb=?', (pid, f['imdb'])) if pid else None
     out.update({'imdb': f['imdb'], 'title': t['name'] if t else '', 'episodeName': ep_name, 'audio': au, 'subs': su, 'defaultAudio': da,
-                'defaultSub': ds, 'subStyle': prefs.get('subStyle'), 'nextMedia': nxt, 'profile': pid, 'markers': None, 'trickplay': None,
+                'defaultSub': ds, 'subStyle': prefs.get('subStyle'), 'nextMedia': nxt, 'profile': pid, 'markers': markers.markers_out(f['id']), 'trickplay': markers.trick_out(f['id']),
                 'rating': rt['value'] if rt else 0, 'resolution': '%dp' % (f['height'] or 0)})
     return jok(out)
 
