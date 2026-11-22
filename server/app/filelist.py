@@ -222,7 +222,7 @@ _dl_rate = {}
 def rss_limited(dev_id):
     t = time.time()
     l = [x for x in _dl_rate.get(dev_id, []) if t - x < 3600]
-    if len(l) >= 10:
+    if len(l) >= 5:
         _dl_rate[dev_id] = l
         return True
     l.append(t)

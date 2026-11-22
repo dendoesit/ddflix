@@ -83,7 +83,7 @@
     }
     var DASH_IMG = 'data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%20200%20200%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27g%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%271%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%235b3cff%27/%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%2300b3c7%27/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect%20width%3D%27200%27%20height%3D%27200%27%20fill%3D%27url%28%23g%29%27/%3E%3Ccircle%20cx%3D%2770%27%20cy%3D%2770%27%20r%3D%2722%27%20fill%3D%27%23ffd36b%27/%3E%3Crect%20x%3D%2738%27%20y%3D%27112%27%20width%3D%2756%27%20height%3D%2750%27%20rx%3D%2710%27%20fill%3D%27%23fff%27%20opacity%3D%27.9%27/%3E%3Crect%20x%3D%27106%27%20y%3D%2750%27%20width%3D%2756%27%20height%3D%2744%27%20rx%3D%2710%27%20fill%3D%27%23fff%27%20opacity%3D%27.9%27/%3E%3Crect%20x%3D%27106%27%20y%3D%27104%27%20width%3D%2756%27%20height%3D%2758%27%20rx%3D%2710%27%20fill%3D%27%23fff%27%20opacity%3D%27.55%27/%3E%3C/svg%3E';
     var DASH = { id: '__dash', name: 'Dashboard', dash: true };
-    function withDash(l) { l = (l || []).filter(function (x) { return !x.dash; }); return localStorage.getItem('bf_dash') === '0' ? l : l.concat([DASH]); }
+    function withDash(l) { l = (l || []).filter(function (x) { return !x.dash; }); return !BF_DASH_ON() ? l : l.concat([DASH]); }
     function listFor(p) {
       if (p.dash) return Promise.resolve([]);
       var adult = !isKids(p);

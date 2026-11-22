@@ -53,6 +53,9 @@ def conn():
         _conn.execute('PRAGMA journal_mode=WAL')
         _conn.execute('PRAGMA busy_timeout=5000')
         _conn.executescript(SCHEMA)
+        cols = {r[1] for r in _conn.execute('PRAGMA table_info(title)')}
+        if 'trailer_yt' not in cols:
+            _conn.execute('ALTER TABLE title ADD COLUMN trailer_yt TEXT')
         if not _conn.execute('SELECT 1 FROM profile LIMIT 1').fetchone():
             _conn.execute("INSERT INTO profile(name, kind, avatar, admin, prefs) VALUES('Dan','adult','fox',1,?)",
                           (json.dumps({'audio': ['rum', 'eng'], 'subs': ['rum', 'eng']}),))

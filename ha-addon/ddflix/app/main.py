@@ -5,7 +5,7 @@ import os
 
 from aiohttp import web
 
-from . import admin, auth, catalog, config, db, discover, filelist, library, play, rss
+from . import admin, auth, catalog, config, db, discover, extra, filelist, library, play, rss
 
 log = logging.getLogger('main')
 STATIC = os.path.join(os.path.dirname(__file__), 'static')
@@ -41,6 +41,7 @@ async def start_jobs(app):
         every('discover', discover.warm, 6 * 3600, 10),
         every('imdb', discover.ratings_job, 24 * 3600, 120),
         every('top10', discover.netflix_top, 12 * 3600, 20),
+        every('trailers', extra.trailer_warm, 3 * 3600, 300),
     )]
 
 
@@ -54,6 +55,7 @@ def make_app():
     app = web.Application(middlewares=[auth.guard], client_max_size=2 * 1024 * 1024)
     auth.routes(app)
     catalog.routes(app)
+    extra.routes(app)
     play.routes(app)
     filelist.routes(app)
     admin.routes(app)

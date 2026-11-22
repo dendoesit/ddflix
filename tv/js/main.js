@@ -84,7 +84,7 @@
     });
     Promise.all([work, minSplash]).then(function (r) {
       BF.log('boot', 'ready ' + r[0] + ' ' + (Date.now() - t0) + 'ms base=' + (A.isLan() ? 'lan' : 'remote'));
-      BF.router.go(r[0] === 'profiles' && localStorage.getItem('bf_dash') !== '0' ? 'dash' : r[0], null, { reset: true });
+      BF.router.go(r[0] === 'profiles' && BF_DASH_ON() ? 'dash' : r[0], null, { reset: true });
       setTimeout(function () { BF.appRendered = true; }, 300); // first screen painted (profile avatars decode) before the crossfade
       if (BF.splashOn) hideSplash();
     }, function (e) {

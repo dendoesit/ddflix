@@ -16,7 +16,11 @@ def library_titles():
     """imdb -> aggregated info over the files present on disk."""
     agg = {}
     for f in db.q('SELECT id, imdb, width, hdr, added_at, probe, ext_subs, season FROM media_file WHERE missing=0'):
-        a = agg.setdefault(f['imdb'], {'w': 0, 'hdr': None, 'added': 0, 'rosub': False, 'ro': False, 'n': 0, 'seasons': set()})
+        a = agg.setdefault(f['imdb'], {'w': 0, 'hdr': None, 'added': 0, 'first': 0, 'rosub': False, 'ro': False, 'n': 0, 'seasons': set(),
+                                       'sfirst': {}})
+        a['first'] = min(a['first'] or 1 << 62, f['added_at'] or 0)
+        if f['season'] is not None:
+            a['sfirst'][f['season']] = min(a['sfirst'].get(f['season'], 1 << 62), f['added_at'] or 0)
         a['w'] = max(a['w'], f['width'] or 0)
         a['hdr'] = a['hdr'] or f['hdr']
         a['added'] = max(a['added'], f['added_at'] or 0)
@@ -65,11 +69,37 @@ def card(t, a, prog=None):
             'new': bool(a.get('added')) and time.time() - a['added'] < 72 * 3600, 'newVersion': False,
             'downloading': False, 'progress': prog, 'certAge': None, 'trailer': None, 'inLibrary': bool(a.get('n'))}
     out['inPlex'] = out['inLibrary']  # TV: 'playable here'
+    b = badge(t, a)
+    if b:
+        out['badge'] = b
+    if t['trailer_yt']:
+        out['trailer'] = t['trailer_yt']
     return out
+
+
+WEEK = 7 * 86400
+
+
+def badge(t, a):
+    """'New season' / 'New episodes' / 'Recently added' for titles with files added in the last 7 days."""
+    if not a or not a.get('n'):
+        return None
+    now = time.time()
+    if now - (a.get('added') or 0) > WEEK:
+        return None
+    if now - (a.get('first') or 0) <= WEEK:
+        return 'Recently added'
+    if t['type'] == 'series':
+        sf = a.get('sfirst') or {}
+        if sf and any(now - v <= WEEK for s, v in sf.items() if s != min(sf)):
+            return 'New season'
+        return 'New episodes'
+    return 'Recently added'
 
 
 def hero(t, a):
     c = card(t, a)
+    c.setdefault('trailer', None)
     c.update({'description': t['description'] or '', 'runtime': t['runtime_min'], 'plexLink': None,
               'seasons': len(a.get('seasons', ())) if t['type'] == 'series' else None})
     return c
@@ -235,6 +265,9 @@ async def title(request):
         await filelist.refresh(imdb)
     dls = await filelist.downloads_for(imdb)
     dl_by_rel = {d['releaseId']: d for d in dls}
+    from . import extra  # opening a title kicks a trailer prefetch
+    extra.want(imdb, front=True)
+    trailer_state = extra.state(imdb)
     agg = library_titles()
     c = card(t, agg.get(imdb))
     following = bool(db.q1('SELECT 1 FROM follow WHERE pattern=?', (t['name'],)))
@@ -251,7 +284,7 @@ async def title(request):
               'recommended': (filelist.pick(imdb) or {'id': None})['id'] if t['type'] == 'movie' else None, 'versionsStale': False,
               'following': following, 'plex': None, 'downloads': dls, 'inLibrary': imdb in agg,
               'imdbUrl': 'https://www.imdb.com/title/%s/' % imdb if imdb.startswith('tt') else None,
-              'trailerReady': False, 'trailerState': 'none', 'similar': [card(x, agg.get(x['imdb'])) for x in sim[:18]]})
+              'trailerReady': trailer_state == 'ready', 'trailerState': trailer_state, 'similar': [card(x, agg.get(x['imdb'])) for x in sim[:18]]})
     if t['type'] == 'series':
         discover.want_series(imdb)
         c['seasons'] = seasons_for(t)
@@ -330,15 +363,42 @@ async def recent(request):
     return jok({'items': cards_for(request['profile'], ids, agg)})
 
 
+_show_cache = {}
+
+
 async def showcase(request):
-    p = db.q1('SELECT * FROM profile WHERE id=?', (int(request.match_info['id']),))
+    """Profile-picker slideshow: kids -> allowed titles; adult -> no Animation/Family/Kids, never Horror/Thriller; backdrop
+    required; daily shuffle per profile; library first, then what is popular now; cached 30 min."""
+    pid = int(request.match_info['id'])
+    hit = _show_cache.get(pid)
+    if hit and time.time() - hit[0] < 1800:
+        return jok({'items': hit[1]})
+    p = db.q1('SELECT * FROM profile WHERE id=?', (pid,))
+    if not p:
+        return jerr(404, 'profile not found')
     ts, agg = lib_rows(p)
-    ts = [t for t in ts if t['imdb'].startswith('tt') and t['background_url']]
-    random.Random('%s:%s' % (request.match_info['id'], time.strftime('%Y-%m-%d'))).shuffle(ts)
+    pool = await discover.row_ids('pop', 'series') + await discover.row_ids('pop', 'movie')
+    extra = db.q('SELECT * FROM title WHERE imdb IN (%s)' % ','.join('?' * len(pool)), pool) if pool else []
+    seen = {t['imdb'] for t in ts}
+    ts = list(ts) + [t for t in extra if t['imdb'] not in seen and allowed(p, t)]
+    def ok(t):
+        if not (t['imdb'].startswith('tt') and t['background_url']):
+            return False
+        g = set(db.jl(t['genres'], []) or [])
+        if p['kind'] == 'kids':
+            return allowed(p, t)
+        return not (g & {'Animation', 'Family', 'Kids', 'Horror', 'Thriller'})
+    lib = [t for t in ts if ok(t) and t['imdb'] in agg]
+    rest = [t for t in ts if ok(t) and t['imdb'] not in agg]
+    rnd = random.Random('%s:%s' % (pid, time.strftime('%Y-%m-%d')))
+    rnd.shuffle(lib)
+    rnd.shuffle(rest)
+    ts = lib[:4] + rest
     out = []
     for t in ts[:8]:
-        c = card(t, agg[t['imdb']])
+        c = card(t, agg.get(t['imdb']))
         out.append({k: c[k] for k in ('imdb', 'type', 'name', 'nameRo', 'year', 'genres', 'logo', 'backdrop', 'new', 'certAge')})
+    _show_cache[pid] = (time.time(), out)
     return jok({'items': out})
 
 
@@ -358,14 +418,6 @@ async def img(request):
     return web.FileResponse(fn, headers={'Content-Type': ct, 'Cache-Control': 'private, max-age=604800'})
 
 
-async def trailer_prefetch(request):
-    return jok({'ready': False, 'state': 'none'})
-
-
-async def trailer_file(request):
-    return jerr(404, 'no trailer')
-
-
 def routes(app):
     r = app.router
     r.add_get('/api/home', home)
@@ -381,5 +433,3 @@ def routes(app):
     r.add_get('/api/profiles/{id:\\d+}/showcase', showcase)
     r.add_get('/img/{kind}/{imdb}', img)
     r.add_get('/img/{kind}/{imdb}/{s:\\d+}/{e:\\d+}', img)
-    r.add_post('/api/title/{imdb}/trailer/prefetch', trailer_prefetch)
-    r.add_get('/api/title/{imdb}/trailer.mp4', trailer_file)

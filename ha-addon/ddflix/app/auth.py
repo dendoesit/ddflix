@@ -103,7 +103,8 @@ async def guard(request, handler):
     if dev and dev['kind'] == 'web':
         request['web'] = True  # web app login (password) = admin
     if dev:
-        if not request['web'] and (path.startswith('/api/admin') or (request.method != 'GET' and path.startswith('/api/settings'))):
+        if not request['web'] and (path.startswith('/api/admin') or (request.method != 'GET' and (
+                path.startswith('/api/settings') or path.startswith('/api/downloads')))):
             return jerr(403, 'not allowed from a device')
         raw = request.headers.get('X-Profile') or request.query.get('p') or ''
         if raw:
@@ -117,6 +118,10 @@ async def guard(request, handler):
             request['profile'] = p
         else:
             request['profile'] = default_profile(dev)
+        kp = request['profile']
+        if kp and kp['kind'] == 'kids' and (path.startswith('/api/admin') or path.startswith('/api/settings') or path.startswith('/api/downloads')
+                                            or path.startswith('/api/devices') or path == '/api/device/pair/approve'):
+            return jerr(403, 'not available on a kids profile')
     elif path in PUBLIC or path.startswith('/s/') or path.startswith('/w/') or path == '/web' or path.startswith('/web/'):
         pass
     elif trusted(request):
@@ -189,7 +194,7 @@ async def pair_start(request):
     db.x('INSERT INTO pair(user_code, device_hash, name, kind, created_at, expires_at) VALUES(?,?,?,?,?,?)',
          (code, sha(dc), str(b.get('name') or 'Samsung TV')[:40], str(b.get('kind') or 'tv')[:12], t, t + 600))
     return jok({'userCode': code, 'deviceCode': dc, 'expiresIn': 600, 'interval': 3,
-                'verifyUrl': config.WEB_URL + '/#/pair', 'verifyUrlComplete': config.WEB_URL + '/#/pair?code=' + code})
+                'verifyUrl': config.WEB_URL + '/web/#/pair', 'verifyUrlComplete': config.WEB_URL + '/web/#/settings?code=' + code})
 
 
 async def pair_poll(request):
@@ -284,6 +289,13 @@ async def profile_select(request):
     if p['pin_hash']:
         if limited('pin', p['id'], 5, 60) or not pin_ok(p['pin_hash'], b.get('pin') or ''):
             return jerr(403, 'wrong PIN', needPin=True)
+    cur = request['profile']
+    if cur and cur['kind'] == 'kids' and p['kind'] != 'kids' and not p['pin_hash']:
+        # leaving Kids for an adult profile without a PIN
+        if not request['web']:
+            return jerr(403, 'Pune un PIN pe acest profil din site (Setări → Profiluri).', needPinSetup=True)
+        if not b.get('confirm'):
+            return jerr(409, 'Confirm to leave the Kids profile', needConfirm=True)
     out = {'ok': True, 'profile': prof_out(p)}
     if request['device']:
         out['ticket'] = ticket(request['device']['id'], p['id'])
@@ -317,7 +329,7 @@ WEAK = {'1234', '4321', '0123', '9876'}
 
 async def profile_create(request):
     if request['profile'] and request['profile']['kind'] == 'kids':
-        return jerr(403, 'profilul de copii nu poate modifica profilurile')
+        return jerr(403, 'not available on a kids profile')
     if not request['web']:
         return jerr(403, 'web only')
     b = await request.json()
@@ -329,7 +341,7 @@ async def profile_create(request):
 
 async def profile_patch(request):
     if request['profile'] and request['profile']['kind'] == 'kids':
-        return jerr(403, 'profilul de copii nu poate modifica profilurile')
+        return jerr(403, 'not available on a kids profile')
     if not request['web']:
         return jerr(403, 'web only')
     pid = int(request.match_info['id'])
@@ -348,7 +360,7 @@ async def profile_patch(request):
 
 async def profile_delete(request):
     if request['profile'] and request['profile']['kind'] == 'kids':
-        return jerr(403, 'profilul de copii nu poate modifica profilurile')
+        return jerr(403, 'not available on a kids profile')
     if not request['web']:
         return jerr(403, 'web only')
     pid = int(request.match_info['id'])
@@ -360,7 +372,7 @@ async def profile_delete(request):
 
 async def profile_pin(request):
     if request['profile'] and request['profile']['kind'] == 'kids':
-        return jerr(403, 'profilul de copii nu poate modifica profilurile')
+        return jerr(403, 'not available on a kids profile')
     if not request['web']:
         return jerr(403, 'edit PINs on the web')
     pid = int(request.match_info['id'])

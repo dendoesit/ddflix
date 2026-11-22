@@ -25,7 +25,7 @@
         return r.json().catch(function () { return {}; }).then(function (d) {
           if (r.status === 401 && path !== '/api/web/login') { logout(); throw new Error('Sesiune expirată'); }
           if (r.status === 403 && /profile locked/.test(d.error || '')) { setProf(null); route(); throw new Error('Alege profilul din nou'); }
-          if (!r.ok) throw new Error(d.error || ('Eroare ' + r.status));
+          if (!r.ok) { var er = new Error(d.error || ('Eroare ' + r.status)); er.status = r.status; er.data = d; throw er; }
           return d;
         });
       });
@@ -59,10 +59,16 @@
           }
           var pin = p.hasPin ? prompt('PIN pentru ' + p.name) : '';
           if (p.hasPin && !pin) return;
-          q('/api/profiles/' + p.id + '/select', { body: { pin: pin || undefined } }).then(function (r) {
-            setProf({ id: p.id, name: p.name, kind: p.kind, avatar: p.avatar, header: r.ticket ? p.id + '.' + r.ticket : String(p.id) });
-            location.hash = '#/'; route();
-          }, function (e) { toast(e.message === 'wrong PIN' ? 'PIN greșit' : e.message); });
+          var go = function (confirmLeave) {
+            q('/api/profiles/' + p.id + '/select', { body: { pin: pin || undefined, confirm: confirmLeave || undefined } }).then(function (r) {
+              setProf({ id: p.id, name: p.name, kind: p.kind, avatar: p.avatar, header: r.ticket ? p.id + '.' + r.ticket : String(p.id) });
+              location.hash = '#/'; route();
+            }, function (e) {
+              if (e.status === 409 && e.data && e.data.needConfirm) { if (confirm('Ieși din profilul de copii și intri pe „' + p.name + '”?')) go(true); return; }
+              toast(e.message === 'wrong PIN' ? 'PIN greșit' : e.message);
+            });
+          };
+          go(false);
         };
         box.appendChild(b);
       });
@@ -171,6 +177,27 @@
     if (h.rating) ch.insertAdjacentHTML('beforeend', '<span class="pill imdb">IMDb ' + Number(h.rating).toFixed(1) + '</span>');
     return d;
   }
+  function heroTrailer(hb, imdb, withButton) {
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var tries = 0;
+    (function poll() {
+      if (!document.body.contains(hb) && tries) return;
+      q('/api/title/' + encodeURIComponent(imdb) + '/trailer/prefetch', { body: {} }).then(function (r) {
+        if (!document.body.contains(hb)) return;
+        if (!r.ready) { if (r.state !== 'none' && ++tries < 40) setTimeout(poll, 2500); return; }
+        var v = document.createElement('video'); v.className = 'htr'; v.muted = true; v.playsInline = true; v.setAttribute('playsinline', '');
+        v.src = authUrl('/api/title/' + encodeURIComponent(imdb) + '/trailer.mp4' + (PROF && PROF.header ? '?p=' + encodeURIComponent(PROF.header) : ''));
+        v.oncanplay = function () { hb.classList.add('playing'); };
+        v.onended = function () { hb.classList.remove('playing'); };
+        hb.insertBefore(v, hb.querySelector('.scrim'));
+        v.play().catch(function () { /* autoplay blocked */ });
+        var mb = document.createElement('button'); mb.className = 'mute'; mb.setAttribute('aria-label', 'Sunet'); mb.textContent = '🔇';
+        mb.onclick = function () { v.muted = !v.muted; mb.textContent = v.muted ? '🔇' : '🔊'; if (v.ended || v.paused) { v.currentTime = 0; v.play(); } };
+        hb.appendChild(mb);
+        if (withButton) { var tb = document.createElement('button'); tb.className = 'btn sec'; tb.textContent = '▶  Trailer'; tb.onclick = function () { v.currentTime = 0; v.muted = false; mb.textContent = '🔊'; v.play(); hb.scrollIntoView({ behavior: 'smooth' }); }; hb.querySelector('.hbtns').appendChild(tb); }
+      }, function () { /* no trailer */ });
+    })();
+  }
   // Netflix-like page header: "Seriale  [Genuri v]"
   function typeHead(type, genre) {
     var sec = type === 'series' ? 'series' : 'movies', h = document.createElement('div'); h.className = 'ghead';
@@ -192,6 +219,7 @@
         if (h.inLibrary) { var pl = document.createElement('a'); pl.className = 'btn'; pl.href = '#/t/' + encodeURIComponent(h.imdb); pl.textContent = '▶  Redă'; bt.appendChild(pl); }
         var mi = document.createElement('a'); mi.className = 'btn sec'; mi.href = '#/t/' + encodeURIComponent(h.imdb); mi.textContent = 'Mai multe informații'; bt.appendChild(mi);
         app.appendChild(hb);
+        heroTrailer(hb, h.imdb, false);
       }
       // genre rows become tiles under the hero (like the TV)
       var tiles = document.createElement('div'); tiles.className = 'tiles';
@@ -273,6 +301,7 @@
       var hero = heroBox(t, true);
       if (t.imdbUrl) hero.querySelector('.hchips').insertAdjacentHTML('beforeend', '<a class="pill" target="_blank" rel="noopener" href="' + esc(t.imdbUrl) + '">pe IMDb ↗</a>');
       app.appendChild(hero);
+      heroTrailer(hero, imdb, true);
       var acts = hero.querySelector('.hbtns');
       if (p.next) { var b = document.createElement('button'); b.className = 'btn'; b.textContent = '▶ ' + (p.next.action || 'Redă'); b.onclick = function () { play(p.next.id, t.name); }; acts.appendChild(b); }
       var ml = document.createElement('button'); ml.className = 'btn sec'; ml.textContent = '+ Lista mea'; ml.onclick = function () { q('/api/mylist/' + encodeURIComponent(imdb), { method: 'POST', body: {} }).then(function () { toast('Adăugat în Lista mea'); }); }; acts.appendChild(ml);
@@ -384,12 +413,125 @@
           e.innerHTML = (x.imdb ? '<img alt="" src="' + img('poster', x.imdb, 200) + '">' : '') + '<div class="i"><div class="n">' + esc(se || x.name) + '</div><div class="r">' + esc(x.name) + ' · ' + gb(x.size) + '</div>' +
             '<div class="s">' + esc(dlInfo(x)) + '</div>' + (x.state === 'done' ? '' : '<div class="prog"><i style="width:' + Math.max(2, Math.round(x.progress * 100)) + '%"></i></div>') + '</div>';
           if (x.imdb) e.onclick = function () { location.hash = '#/t/' + encodeURIComponent(x.imdb); };
+          var ac = document.createElement('div'); ac.className = 'da';
+          var mk = function (label, fn) { var b = document.createElement('button'); b.className = 'btn sec sm'; b.textContent = label; b.onclick = function (ev) { ev.stopPropagation(); fn(); }; ac.appendChild(b); };
+          if (x.state === 'paused') mk('▶ Reia', function () { q('/api/downloads/' + x.id + '/resume', { body: {} }).then(function () { toast('Reluat'); }, function (e) { toast(e.message); }); });
+          else if (x.state !== 'done') mk('⏸ Pauză', function () { q('/api/downloads/' + x.id + '/pause', { body: {} }).then(function () { toast('Pus pe pauză'); }, function (e) { toast(e.message); }); });
+          mk(x.state === 'done' ? 'Scoate din listă' : '✕ Anulează', function () {
+            var files = x.state !== 'done' && confirm('Anulezi descărcarea „' + (x.name || '') + '”? Fișierul parțial se șterge de pe NAS.');
+            if (x.state !== 'done' && !files) return;
+            q('/api/downloads/' + x.id + (files ? '?files=1' : ''), { method: 'DELETE' }).then(function () { toast(files ? 'Anulat' : 'Scos din listă (fișierul rămâne pe NAS)'); }, function (e) { toast(e.message); });
+          });
+          e.appendChild(ac);
           list.appendChild(e);
         });
         setTimeout(tick, 3000);
       }, fail);
     };
     tick();
+  }
+
+  // ---------- Settings: pair a TV, devices, profiles (PIN, kids age), my audio/subtitle languages, quality, storage
+  var LANGS = [['rum', 'Română'], ['eng', 'Engleză'], ['fre', 'Franceză'], ['ger', 'Germană'], ['spa', 'Spaniolă'], ['ita', 'Italiană'], ['hun', 'Maghiară']];
+  function settingsView(code) {
+    LS.del('dd_paircode');
+    if (PROF && PROF.kind === 'kids') { app.innerHTML = '<p class="pad err">Setările nu sunt disponibile pe profilul de copii.</p>'; return; }
+    app.innerHTML = '<div class="ghead"><h1>Setări</h1></div>' +
+      '<section class="set" id="s-pair"><h2>Asociază un televizor</h2><p class="mut">Pe televizor deschide DDflix: apare un cod de 6 litere. Scrie-l aici (sau scanează QR-ul de pe TV cu telefonul).</p>' +
+      '<form class="frm"><input name="code" maxlength="7" placeholder="Cod (ex. KQ7MWD)" autocomplete="off" style="text-transform:uppercase"><input name="name" maxlength="40" placeholder="Nume (ex. Sufragerie)"><select name="pid"></select><button class="btn red">Asociază</button></form></section>' +
+      '<section class="set"><h2>Dispozitive</h2><div id="s-dev" class="lst"></div></section>' +
+      '<section class="set"><h2>Profiluri</h2><div id="s-prof" class="lst"></div><button class="btn sec" id="s-add">+ Adaugă profil</button></section>' +
+      '<section class="set"><h2>Limbi pentru ' + esc(PROF ? PROF.name : '') + '</h2><p class="mut">Ordinea în care se aleg automat sunetul și subtitrarea.</p><div id="s-lang"></div></section>' +
+      '<section class="set"><h2>Redare</h2><div id="s-play"></div></section>' +
+      '<section class="set"><h2>Server</h2><div id="s-srv" class="mut"></div></section>';
+    var f = app.querySelector('#s-pair form');
+    if (code) { f.code.value = code.toUpperCase(); setTimeout(function () { app.querySelector('#s-pair').scrollIntoView({ block: 'start' }); f.name.focus(); }, 50); }
+    f.onsubmit = function (e) {
+      e.preventDefault();
+      q('/api/device/pair/approve', { body: { code: f.code.value.trim(), name: f.name.value.trim() || 'Televizor', profileId: f.pid.value ? +f.pid.value : null } })
+        .then(function () { toast('Televizor asociat. Pe TV apare ecranul de profiluri.'); f.reset(); loadDev(); history.replaceState(null, '', '#/settings'); }, function (e) { toast(e.message === 'unknown or expired code' ? 'Cod greșit sau expirat: verifică pe TV' : e.message); });
+    };
+    function ago(t) { if (!t) return 'niciodată'; var s = Date.now() / 1000 - t; return s < 120 ? 'acum' : s < 3600 ? 'acum ' + Math.round(s / 60) + ' min' : s < 86400 ? 'acum ' + Math.round(s / 3600) + ' h' : new Date(t * 1000).toLocaleDateString('ro-RO'); }
+    function loadDev() {
+      var box = app.querySelector('#s-dev');
+      q('/api/devices').then(function (d) {
+        box.innerHTML = '';
+        d.items.forEach(function (x) {
+          var r = document.createElement('div'); r.className = 'li';
+          r.innerHTML = '<div><b>' + esc(x.name) + '</b> <span class="mut">· ' + (x.kind === 'tv' ? 'televizor' : 'browser') + '</span><div class="mut sm">văzut ' + esc(ago(x.lastSeen)) + (x.lastIp ? ' · ' + esc(x.lastIp) : '') + '</div></div>';
+          var b = document.createElement('button'); b.className = 'btn sec sm'; b.textContent = 'Revocă';
+          b.onclick = function () { if (confirm('Revoci „' + x.name + '”? Va trebui asociat din nou.')) q('/api/devices/' + x.id, { method: 'DELETE' }).then(loadDev, function (e) { toast(e.message); }); };
+          r.appendChild(b); box.appendChild(r);
+        });
+      }, function (e) { box.innerHTML = '<p class="err">' + esc(e.message) + '</p>'; });
+    }
+    function loadProf() {
+      var box = app.querySelector('#s-prof');
+      q('/api/profiles').then(function (d) {
+        f.pid.innerHTML = '<option value="">Profil implicit pe TV: niciunul (alegi pe TV)</option>' + d.items.map(function (p) { return '<option value="' + p.id + '">Profil implicit: ' + esc(p.name) + '</option>'; }).join('');
+        box.innerHTML = '';
+        d.items.forEach(function (p) {
+          var r = document.createElement('div'); r.className = 'li prof';
+          r.innerHTML = avatar(p) + '<input class="pn" maxlength="30" value="' + esc(p.name) + '" aria-label="Nume">' +
+            '<select class="pk"><option value="adult">Adult</option><option value="kids">Copil</option></select>' +
+            '<select class="pa"><option value="7">până la 7 ani</option><option value="12">până la 12 ani</option><option value="15">până la 15 ani</option></select>' +
+            '<button class="btn sec sm pin">' + (p.hasPin ? '🔒 Schimbă PIN' : 'Pune PIN') + '</button>' + (p.hasPin ? '<button class="btn sec sm nopin">Scoate PIN</button>' : '') +
+            '<button class="btn sec sm del">Șterge</button>';
+          var pk = r.querySelector('.pk'), pa = r.querySelector('.pa'), pn = r.querySelector('.pn');
+          pk.value = p.kind; pa.value = String(p.maxRating || 12); pa.hidden = p.kind !== 'kids';
+          var save = function (body) { q('/api/profiles/' + p.id, { method: 'PATCH', body: body }).then(function () { toast('Salvat'); if (PROF && PROF.id === p.id && body.name) { PROF.name = body.name; setProf(PROF); } loadProf(); }, function (e) { toast(e.message); }); };
+          pn.onchange = function () { if (pn.value.trim()) save({ name: pn.value.trim() }); };
+          pk.onchange = function () { save({ kind: pk.value, maxRating: pk.value === 'kids' ? +pa.value : null }); };
+          pa.onchange = function () { save({ maxRating: +pa.value }); };
+          r.querySelector('.pin').onclick = function () {
+            var pin = prompt('PIN nou de 4 cifre pentru ' + p.name + ' (nu 1234, nu 0000):'); if (!pin) return;
+            q('/api/profiles/' + p.id + '/pin', { body: { pin: pin } }).then(function () { toast('PIN salvat'); loadProf(); }, function (e) { toast(e.message); });
+          };
+          var np = r.querySelector('.nopin'); if (np) np.onclick = function () { q('/api/profiles/' + p.id + '/pin', { body: { pin: '' } }).then(function () { toast('PIN scos'); loadProf(); }, function (e) { toast(e.message); }); };
+          r.querySelector('.del').onclick = function () {
+            if (!confirm('Ștergi profilul „' + p.name + '”? Se pierd lista și progresul lui.')) return;
+            q('/api/profiles/' + p.id, { method: 'DELETE' }).then(function () { if (PROF && PROF.id === p.id) { setProf(null); route(); } else loadProf(); }, function (e) { toast(e.message); });
+          };
+          box.appendChild(r);
+          if (PROF && p.id === PROF.id) loadLang(p);
+        });
+      }, function (e) { box.innerHTML = '<p class="err">' + esc(e.message) + '</p>'; });
+    }
+    app.querySelector('#s-add').onclick = function () {
+      var n = prompt('Numele profilului nou:'); if (!n || !n.trim()) return;
+      var kidsP = confirm('E profil de copil? (OK = da, Cancel = adult)');
+      q('/api/profiles', { body: { name: n.trim(), kind: kidsP ? 'kids' : 'adult', maxRating: kidsP ? 12 : null, avatar: Object.keys(COLORS)[Math.floor(Math.random() * 8)] } }).then(loadProf, function (e) { toast(e.message); });
+    };
+    function loadLang(p) {
+      var box = app.querySelector('#s-lang'), pr = p.prefs || {};
+      var opts = function (sel) { return '<option value="">—</option>' + LANGS.map(function (l) { return '<option value="' + l[0] + '"' + (l[0] === sel ? ' selected' : '') + '>' + l[1] + '</option>'; }).join(''); };
+      var a = pr.audio || ['rum', 'eng'], s = pr.subs || ['rum', 'eng'], st = pr.subStyle || {};
+      box.innerHTML = '<div class="frm"><label>Sunet: 1<select class="a0">' + opts(a[0]) + '</select> 2<select class="a1">' + opts(a[1]) + '</select></label>' +
+        '<label>Subtitrare: 1<select class="s0">' + opts(s[0]) + '</select> 2<select class="s1">' + opts(s[1]) + '</select></label>' +
+        '<label>Mărime<select class="ss"><option value="s">mică</option><option value="m">medie</option><option value="l">mare</option><option value="xl">foarte mare</option></select></label>' +
+        '<label>Culoare<select class="sc"><option value="white">albă</option><option value="yellow">galbenă</option><option value="cyan">cyan</option></select></label>' +
+        '<label>Fundal<select class="sb"><option value="shadow">umbră</option><option value="box">casetă</option><option value="outline">contur</option></select></label></div>';
+      box.querySelector('.ss').value = st.size || 'm'; box.querySelector('.sc').value = st.color || 'white'; box.querySelector('.sb').value = st.bg || 'shadow';
+      box.onchange = function () {
+        var v = function (c) { return box.querySelector(c).value; };
+        q('/api/profiles/' + p.id + '/prefs', { method: 'PUT', body: { audio: [v('.a0'), v('.a1')].filter(Boolean), subs: [v('.s0'), v('.s1')].filter(Boolean), subStyle: { size: v('.ss'), color: v('.sc'), bg: v('.sb') } } })
+          .then(function () { toast('Salvat'); }, function (e) { toast(e.message); });
+      };
+    }
+    function loadSrv() {
+      Promise.all([q('/api/settings'), q('/api/storage').catch(function () { return {}; }), q('/api/health').catch(function () { return {}; })]).then(function (r) {
+        var s = r[0], st = r[1], h = r[2];
+        var pl = app.querySelector('#s-play');
+        pl.innerHTML = '<div class="frm"><label>Calitate preferată<select class="q"><option value="auto">Automat</option><option value="original">Originală (fără conversie)</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></label></div>';
+        var qs = pl.querySelector('.q'); qs.value = s.quality || 'auto';
+        qs.onchange = function () { q('/api/settings', { method: 'PUT', body: { quality: qs.value } }).then(function () { toast('Salvat'); }, function (e) { toast(e.message); }); };
+        var disk = st.media ? gb(st.media.used) + ' folosiți din ' + gb(st.media.total) + ' (' + gb(st.media.free) + ' liberi)' : '—';
+        app.querySelector('#s-srv').innerHTML = 'NAS (media): ' + esc(disk) + '<br>Fișiere în bibliotecă: ' + esc(h.files != null ? h.files : '—') +
+          '<br>FileList: ' + (s.filelist ? '✓ configurat' : '✗ lipsește') + ' · qBittorrent: ' + (s.qbittorrent ? '✓' : '✗') + ' · RSS: ' + (s.rss ? '✓' : '✗') +
+          '<br>Trailere în cache: ' + esc(gb(st.trailers || 0) || '0 GB');
+      }, function (e) { app.querySelector('#s-srv').textContent = e.message; });
+    }
+    loadDev(); loadProf(); loadSrv();
   }
 
   // ---------- player
@@ -465,9 +607,12 @@
     [].forEach.call(document.querySelectorAll('nav a'), function (a) { var k = a.getAttribute('href').replace('#/', ''); a.className = (k === parts[0].split('?')[0] || (!k && !parts[0])) ? 'on' : ''; });
     document.getElementById('top').hidden = !TOKEN;
     if (!TOKEN || !API) return loginView(!API ? 'Lipsește adresa serverului' : '');
+    var pc = /[?&]code=([A-Za-z0-9-]+)/.exec(h); if (pc) LS.set('dd_paircode', pc[1]);
     if (!PROF || parts[0] === 'profiles') return profilesView(false);
+    if (LS.get('dd_paircode') && parts[0].split('?')[0] !== 'settings') { var c0 = LS.get('dd_paircode'); location.hash = '#/settings?code=' + c0; return; }
     var me = document.getElementById('me'); me.innerHTML = avatar(PROF); me.title = PROF.name + ' · schimbă profilul';
     document.getElementById('dl-tab').hidden = PROF.kind === 'kids';
+    document.getElementById('set-tab').hidden = PROF.kind === 'kids';
     document.body.classList.toggle('kids', PROF.kind === 'kids');
     if (!DL.t) dlPoll();
     window.scrollTo(0, 0);
@@ -475,6 +620,7 @@
     if (parts[0] === 't') return title(decodeURIComponent(parts[1]));
     if (parts[0] === 'downloads') return downloads();
     if (parts[0] === 'mylist') return mylist();
+    if (parts[0].split('?')[0] === 'settings' || parts[0].split('?')[0] === 'pair') return settingsView((/[?&]code=([A-Za-z0-9-]+)/.exec(h) || [])[1] || '');
     if (parts[0] === 'series' || parts[0] === 'movies') {
       var ty = parts[0] === 'series' ? 'series' : 'movie', rest = (parts[1] || '').split('?'), so = /sort=(\w+)/.exec(h);
       if (rest[0]) return genreView(ty, decodeURIComponent(rest[0]), so && so[1]);

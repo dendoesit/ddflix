@@ -44,7 +44,7 @@
       if (BF.player && BF.player.onResume) BF.player.onResume();
       if (BF.player && BF.player.isOpen() && (cls === 'long' || (why !== 'vis' && cls === 'medium'))) BF.player.close(cls === 'long');
       // TV was off ≥5 min (Autorun resumes the frozen app): show the dashboard right away, not the last profile screen
-      if (cls !== 'short' && localStorage.getItem('bf_dash') !== '0') { var t0 = BF.router.top(); if (!(t0 && t0.name === 'dash')) BF.router.go('dash', null, { reset: true }); }
+      if (cls !== 'short' && BF_DASH_ON()) { var t0 = BF.router.top(); if (!(t0 && t0.name === 'dash')) BF.router.go('dash', null, { reset: true }); }
       var tries = 0;
       var net = function () { return A.pick().catch(function (e) { if (++tries >= 4) throw e; return new Promise(function (r) { setTimeout(r, 1500); }).then(net); }); };
       net().then(function () { return A.ping(); }).then(function () { return A.profiles(); }).then(function (d) {
@@ -60,8 +60,8 @@
           if (BF.player && BF.player.isOpen()) BF.player.close(true);
           BF.router.go('profiles', null, { reset: true }); return;
         }
-        var toDash = localStorage.getItem('bf_dash') !== '0' && cls === 'medium';
-        if (cls === 'long' || !pid || toDash) { if (!(top && (top.name === 'profiles' || top.name === 'dash'))) BF.router.go(localStorage.getItem('bf_dash') !== '0' ? 'dash' : 'profiles', null, { reset: true }); else if (top.scr.refresh) top.scr.refresh('resume'); return; }
+        var toDash = BF_DASH_ON() && cls === 'medium';
+        if (cls === 'long' || !pid || toDash) { if (!(top && (top.name === 'profiles' || top.name === 'dash'))) BF.router.go(BF_DASH_ON() ? 'dash' : 'profiles', null, { reset: true }); else if (top.scr.refresh) top.scr.refresh('resume'); return; }
         if (fresh && BF.applyProfile) BF.applyProfile(fresh);
         // ticket probe: a 403 "profile locked" goes through onProfileLocked (PIN changed)
         A.cont().then(function () { self.refreshTop('resume'); }, function () {});

@@ -202,12 +202,14 @@ async def ensure_title(session, imdb, pname, pyear, ptype):
             int(rt.group(1)) if rt else None, (m.get('released') or '')[:10], m.get('poster') or '', m.get('background') or '',
             m.get('logo') or '', json.dumps(vids), t)
     if row:
+        db.x('UPDATE title SET trailer_yt=? WHERE imdb=?', (trailer or '', imdb))
         db.x('UPDATE title SET type=?, name=?, year=?, year_end=?, description=?, genres=?, cast_=?, director=?, imdb_rating=?, '
              'runtime_min=?, released=?, poster_url=?, background_url=?, logo_url=?, videos=?, meta_at=? WHERE imdb=?', vals + (imdb,))
     else:
         db.x('INSERT INTO title(type, name, year, year_end, description, genres, cast_, director, imdb_rating, runtime_min, released, '
              'poster_url, background_url, logo_url, videos, meta_at, imdb, first_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
              vals + (imdb, t))
+        db.x('UPDATE title SET trailer_yt=? WHERE imdb=?', (trailer or '', imdb))
 
 
 # ---------------- scan

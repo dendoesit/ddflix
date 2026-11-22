@@ -7,6 +7,8 @@ var BF_CONFIG = {
   // Your server's web app (phone pairing page, profiles, PINs).
   webHost: 'NAS_IP:8090',
   // Dashboard
+  // Dashboard home screen (clock, weather, news...): off = the app opens on profiles / movies
+  dashboard: false,
   ownerName: 'Dan',                  // shown in "Bună ziua, <name>"
   home: { name: 'București', region: 'București, România', lat: 44.4268, lon: 26.1025 },
   // Traffic card: three routes from home. "match" is tested against the route names your server returns (traffic.routes[].to).
@@ -16,3 +18,6 @@ var BF_CONFIG = {
     { match: 'bra[sș]ov', icon: '🛣️', label: 'Brașov', demoMin: 150 }
   ]
 };
+
+/* dashboard on only if enabled above (and not switched off per TV with localStorage bf_dash = '0') */
+function BF_DASH_ON() { return BF_CONFIG.dashboard !== false && localStorage.getItem('bf_dash') !== '0'; }
