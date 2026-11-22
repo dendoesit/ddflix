@@ -117,7 +117,7 @@ async def guard(request, handler):
             request['profile'] = p
         else:
             request['profile'] = default_profile(dev)
-    elif path in PUBLIC or path.startswith('/s/') or path.startswith('/w/'):
+    elif path in PUBLIC or path.startswith('/s/') or path.startswith('/w/') or path == '/web' or path.startswith('/web/'):
         pass
     elif trusted(request):
         request['web'] = True
@@ -316,16 +316,20 @@ WEAK = {'1234', '4321', '0123', '9876'}
 
 
 async def profile_create(request):
+    if request['profile'] and request['profile']['kind'] == 'kids':
+        return jerr(403, 'profilul de copii nu poate modifica profilurile')
     if not request['web']:
         return jerr(403, 'web only')
     b = await request.json()
     pid = db.x('INSERT INTO profile(name, kind, max_rating, avatar, admin, prefs) VALUES(?,?,?,?,0,?)',
                (str(b.get('name') or 'Profil')[:30], 'kids' if b.get('kind') == 'kids' else 'adult', b.get('maxRating') or None,
-                'fox', json.dumps({'audio': ['rum', 'eng'], 'subs': ['rum', 'eng']})))
+                str(b.get('avatar') or 'red')[:12], json.dumps({'audio': ['rum', 'eng'], 'subs': ['rum', 'eng']})))
     return jok({'ok': True, 'profile': prof_out(profile_row(pid))})
 
 
 async def profile_patch(request):
+    if request['profile'] and request['profile']['kind'] == 'kids':
+        return jerr(403, 'profilul de copii nu poate modifica profilurile')
     if not request['web']:
         return jerr(403, 'web only')
     pid = int(request.match_info['id'])
@@ -336,11 +340,15 @@ async def profile_patch(request):
         db.x('UPDATE profile SET kind=? WHERE id=?', ('kids' if b['kind'] == 'kids' else 'adult', pid))
     if 'maxRating' in b:
         db.x('UPDATE profile SET max_rating=? WHERE id=?', (b['maxRating'] or None, pid))
+    if 'avatar' in b:
+        db.x('UPDATE profile SET avatar=? WHERE id=?', (str(b['avatar'])[:12], pid))
     p = profile_row(pid)
     return jok({'ok': True, 'profile': prof_out(p)}) if p else jerr(404, 'profile not found')
 
 
 async def profile_delete(request):
+    if request['profile'] and request['profile']['kind'] == 'kids':
+        return jerr(403, 'profilul de copii nu poate modifica profilurile')
     if not request['web']:
         return jerr(403, 'web only')
     pid = int(request.match_info['id'])
@@ -351,6 +359,8 @@ async def profile_delete(request):
 
 
 async def profile_pin(request):
+    if request['profile'] and request['profile']['kind'] == 'kids':
+        return jerr(403, 'profilul de copii nu poate modifica profilurile')
     if not request['web']:
         return jerr(403, 'edit PINs on the web')
     pid = int(request.match_info['id'])

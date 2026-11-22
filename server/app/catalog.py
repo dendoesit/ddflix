@@ -37,10 +37,20 @@ def library_titles():
     return agg
 
 
+KIDS_BAD = {'Horror', 'Crime', 'Thriller', 'War', 'Mystery', 'Romance', 'Film-Noir', 'Adult', 'Reality-TV', 'Talk-Show', 'Game-Show', 'News'}
+
+
 def allowed(profile, t):
+    """Kids profiles see only family titles (IMDb genre 'Family'), never anything tagged Horror / Crime / Thriller / War...;
+    max age 7 or less = family animation only."""
     if not profile or profile['kind'] != 'kids':
         return True
-    return bool(KIDS_GENRES & set(db.jl(t['genres'], []) or []))
+    g = set(db.jl(t['genres'], []) or [])
+    if 'Family' not in g or g & KIDS_BAD:
+        return False
+    if (profile['max_rating'] or 12) <= 7 and 'Animation' not in g:
+        return False
+    return True
 
 
 def card(t, a, prog=None):
@@ -95,17 +105,24 @@ async def home(request):
             rows.append({'key': key, 'title': title, 'items': cs, 'link': link})
 
     row('new', 'Pe NAS-ul tău', by_added[:40], '#/browse?sort=added' + ('&type=' + typ if typ else ''))
-    pats = [r['pattern'] for r in db.q('SELECT pattern FROM follow')]
+    pats = [r['pattern'] for r in db.q('SELECT pattern FROM follow')] if not (p and p['kind'] == 'kids') else []
     if pats:
         fl = db.q('SELECT * FROM title WHERE name IN (%s) AND (type=? OR ? IS NULL)' % ','.join('?' * len(pats)), pats + [typ, typ])
         row('follow', 'Seriale urmărite', [t for t in fl if allowed(p, t)])
-    specs = discover.home_rows(typ)
+    kids = bool(p and p['kind'] == 'kids')
+    specs = discover.kids_rows(typ) if kids else discover.home_rows(typ)
     results = await asyncio.gather(*[discover.row_ids(kind, t, g) for _, _, kind, t, g in specs])
     hero_ids = []
     for (key, title_, kind, t, g), ids in zip(specs, results):
         cs = cards_for(p, ids, agg)
+        if kind in ('nfx', 'imdb10'):
+            for i, c in enumerate(cs):
+                c['rank'] = i + 1
+            if kind == 'nfx':
+                wk = discover.week_label(discover.top_ids('nfx', t)['week'])
+                title_ = title_ + (' · ' + wk if wk else '')
         if len(cs) >= 4:
-            link = '#/browse?type=%s' % t + ('&genre=' + g if g else '&sort=' + ('score' if kind == 'best' else 'newest' if kind == 'new' else 'popular'))
+            link = '' if kind in ('nfx', 'imdb10') else '#/browse?type=%s' % t + ('&genre=' + g if g else '&sort=' + ('score' if kind == 'best' else 'newest' if kind == 'new' else 'popular'))
             rows.append({'key': key, 'title': title_, 'items': cs[:40], 'link': link})
         if kind == 'pop':
             hero_ids += ids[:8]

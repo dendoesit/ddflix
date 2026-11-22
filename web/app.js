@@ -7,19 +7,24 @@
              del: function (k) { try { localStorage.removeItem(k); } catch (e) { /* */ } } };
   var qsApi = (location.search.match(/[?&]api=([^&]+)/) || [])[1];
   if (qsApi) { LS.set('dd_api', decodeURIComponent(qsApi)); history.replaceState(null, '', location.pathname + location.hash); }
-  var API = (LS.get('dd_api') || window.DDFLIX_API || '').replace(/\/$/, '');
+  var SAME = /^\/web\//.test(location.pathname);
+  var API = SAME ? location.origin : (LS.get('dd_api') || window.DDFLIX_API || '').replace(/\/$/, '');
   var TOKEN = LS.get('dd_token') || '';
+  var PROF = null;  // {id, name, kind, avatar, header}
+  try { PROF = JSON.parse(LS.get('dd_prof') || 'null'); } catch (e) { PROF = null; }
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function toast(t) { var e = document.getElementById('toast'); e.textContent = t; e.className = 'on'; clearTimeout(toast.t); toast.t = setTimeout(function () { e.className = ''; }, 2600); }
   function q(path, opt) {
     opt = opt || {};
     var h = { 'Authorization': 'Bearer ' + TOKEN };
+    if (PROF && PROF.header) h['X-Profile'] = PROF.header;
     if (opt.body) h['Content-Type'] = 'application/json';
     return fetch(API + path, { method: opt.method || (opt.body ? 'POST' : 'GET'), headers: h, body: opt.body ? JSON.stringify(opt.body) : undefined })
       .then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (d) {
           if (r.status === 401 && path !== '/api/web/login') { logout(); throw new Error('Sesiune expirată'); }
+          if (r.status === 403 && /profile locked/.test(d.error || '')) { setProf(null); route(); throw new Error('Alege profilul din nou'); }
           if (!r.ok) throw new Error(d.error || ('Eroare ' + r.status));
           return d;
         });
@@ -29,17 +34,75 @@
   function authUrl(p) { return API + p + (p.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(TOKEN); }
   function fmtT(s) { s = Math.max(0, Math.floor(s || 0)); var h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (x < 10 ? '0' : '') + x; }
   function gb(b) { return b ? (b / 1073741824).toFixed(1) + ' GB' : ''; }
-  function logout() { TOKEN = ''; LS.del('dd_token'); route(); }
+  function logout() { TOKEN = ''; LS.del('dd_token'); setProf(null); route(); }
+  function setProf(p) { PROF = p; if (p) LS.set('dd_prof', JSON.stringify(p)); else LS.del('dd_prof'); }
+
+  // ---------- profiles ("Cine se uită?")
+  var COLORS = { red: '#e50914', blue: '#2a7fff', green: '#2ecc71', yellow: '#f5c518', purple: '#9b59b6', orange: '#ff8a00', pink: '#ff4fa3', teal: '#17c3b2' };
+  function avatar(p, big) {
+    var c = COLORS[p.avatar] || COLORS[Object.keys(COLORS)[p.id % 8]];
+    return '<span class="av' + (big ? ' big' : '') + '" style="background:' + c + '">' + esc((p.name || '?').charAt(0).toUpperCase()) + (p.kind === 'kids' ? '<i>copii</i>' : '') + '</span>';
+  }
+  function profilesView(manage) {
+    document.getElementById('top').hidden = true;
+    app.innerHTML = '<div class="who"><h1>' + (manage ? 'Gestionează profilurile' : 'Cine se uită?') + '</h1><div class="avs"></div><div class="wact"></div></div>';
+    var box = app.querySelector('.avs'), act = app.querySelector('.wact');
+    q('/api/profiles').then(function (d) {
+      var canManage = !PROF || PROF.kind !== 'kids';
+      d.items.forEach(function (p) {
+        var b = document.createElement('button'); b.className = 'avb';
+        b.innerHTML = avatar(p, true) + '<span class="n">' + esc(p.name) + (p.hasPin ? ' 🔒' : '') + '</span>' + (manage ? '<span class="x">✕ Șterge</span>' : '');
+        b.onclick = function () {
+          if (manage) {
+            if (!confirm('Ștergi profilul „' + p.name + '”? Se pierd lista și progresul lui.')) return;
+            return q('/api/profiles/' + p.id, { method: 'DELETE' }).then(function () { if (PROF && PROF.id === p.id) setProf(null); profilesView(true); }, function (e) { toast(e.message); });
+          }
+          var pin = p.hasPin ? prompt('PIN pentru ' + p.name) : '';
+          if (p.hasPin && !pin) return;
+          q('/api/profiles/' + p.id + '/select', { body: { pin: pin || undefined } }).then(function (r) {
+            setProf({ id: p.id, name: p.name, kind: p.kind, avatar: p.avatar, header: r.ticket ? p.id + '.' + r.ticket : String(p.id) });
+            location.hash = '#/'; route();
+          }, function (e) { toast(e.message === 'wrong PIN' ? 'PIN greșit' : e.message); });
+        };
+        box.appendChild(b);
+      });
+      if (canManage && !manage) {
+        var add = document.createElement('button'); add.className = 'avb';
+        add.innerHTML = '<span class="av big plus">+</span><span class="n">Adaugă profil</span>';
+        add.onclick = function () { addProfile(box, add); };
+        box.appendChild(add);
+      }
+      if (canManage) {
+        var m = document.createElement('button'); m.className = 'btn sec'; m.textContent = manage ? 'Gata' : 'Gestionează profilurile';
+        m.onclick = function () { profilesView(!manage); }; act.appendChild(m);
+      }
+    }, fail);
+  }
+  function addProfile(box, add) {
+    var f = document.createElement('form'); f.className = 'addp';
+    f.innerHTML = '<input name="n" maxlength="30" placeholder="Nume" required autocomplete="off">' +
+      '<label><input type="checkbox" name="k"> Profil de copil (doar conținut pentru copii)</label>' +
+      '<div><button class="btn red">Salvează</button><button type="button" class="btn sec">Renunță</button></div>';
+    add.replaceWith(f); f.n.focus();
+    f.querySelector('button[type=button]').onclick = function () { profilesView(false); };
+    f.onsubmit = function (e) {
+      e.preventDefault();
+      var colors = Object.keys(COLORS), c = colors[Math.floor(Math.random() * colors.length)];
+      q('/api/profiles', { body: { name: f.n.value.trim(), kind: f.k.checked ? 'kids' : 'adult', maxRating: f.k.checked ? 12 : null, avatar: c } })
+        .then(function () { profilesView(false); }, function (e) { toast(e.message); });
+    };
+  }
 
   // ---------- views
   function score(r) { return r ? '<span class="imdb">IMDb ' + esc(Number(r).toFixed(1)) + '</span>' : ''; }
   function card(c) {
     var a = document.createElement('a'); a.className = 'card'; a.href = '#/t/' + encodeURIComponent(c.imdb);
     var pct = c.play && c.play.pct ? c.play.pct : c.progress && c.progress.pct;
-    a.innerHTML = '<div class="pw">' + (c.poster ? '<img loading="lazy" alt="" src="' + img('poster', c.imdb, 300) + '">' : '<div class="ph">' + esc(c.name) + '</div>') +
+    a.innerHTML = (c.rank ? '<span class="rkn">' + c.rank + '</span><div class="rkb">' : '') + '<div class="pw">' + (c.poster ? '<img loading="lazy" alt="" src="' + img('poster', c.imdb, 300) + '">' : '<div class="ph">' + esc(c.name) + '</div>') +
       (c.inLibrary ? '<span class="nas">NAS</span>' : '') + score(c.rating) +
       (pct ? '<div class="bar"><i style="width:' + Math.round(pct * 100) + '%"></i></div>' : '') + '</div>' +
-      '<div class="t">' + esc(c.name) + (c.year ? ' · ' + c.year : '') + '</div>';
+      '<div class="t">' + esc(c.name) + (c.year ? ' · ' + c.year : '') + '</div>' + (c.rank ? '</div>' : '');
+    if (c.rank) a.className += ' rkc';
     return a;
   }
   // server row link "#/browse?type=series&genre=Crime" -> our page "#/series/Crime"
@@ -54,13 +117,21 @@
     var s = document.createElement('section'); s.className = 'row';
     var href = pageLink(link);
     s.innerHTML = '<h2>' + (href ? '<a href="' + esc(href) + '">' + esc(title) + ' <span class="more">Vezi tot ›</span></a>' : esc(title)) + '</h2>';
-    var st = document.createElement('div'); st.className = 'strip'; items.forEach(function (c) { st.appendChild(card(c)); }); s.appendChild(st);
+    var sw = document.createElement('div'); sw.className = 'sw'; s.appendChild(sw);
+    var st = document.createElement('div'); st.className = 'strip'; items.forEach(function (c) { st.appendChild(card(c)); }); sw.appendChild(st);
+    [['l', '‹', -1], ['r', '›', 1]].forEach(function (x) {
+      var b = document.createElement('button'); b.className = 'arr ' + x[0]; b.textContent = x[1]; b.setAttribute('aria-label', x[2] < 0 ? 'Înapoi' : 'Înainte');
+      b.onclick = function () { st.scrollBy({ left: x[2] * st.clientWidth * 0.85, behavior: 'smooth' }); };
+      sw.appendChild(b);
+    });
+    var upd = function () { sw.classList.toggle('at-start', st.scrollLeft < 8); sw.classList.toggle('at-end', st.scrollLeft + st.clientWidth > st.scrollWidth - 8); };
+    st.addEventListener('scroll', upd, { passive: true }); setTimeout(upd, 0);
     return s;
   }
 
   function loginView(err) {
     app.innerHTML = '<form class="login"><h1>DDFLIX</h1><input type="password" name="pw" placeholder="Parola" autocomplete="current-password" required>' +
-      '<details><summary class="mut">Server</summary><input name="api" placeholder="https://…" value="' + esc(API) + '"></details>' +
+      (SAME ? '<input type="hidden" name="api" value="">' : '<details><summary class="mut">Server</summary><input name="api" placeholder="https://…" value="' + esc(API) + '"></details>') +
       '<button class="btn red" style="width:100%;justify-content:center">Intră</button><p class="err">' + esc(err || '') + '</p></form>';
     var f = app.querySelector('form');
     f.onsubmit = function (e) {
@@ -68,7 +139,7 @@
       var api = f.api.value.trim().replace(/\/$/, '');
       if (api && api !== window.DDFLIX_API) LS.set('dd_api', api); API = api || API;
       q('/api/web/login', { body: { password: f.pw.value, name: (navigator.platform || 'Web').slice(0, 30) } })
-        .then(function (d) { TOKEN = d.token; LS.set('dd_token', TOKEN); location.hash = '#/'; route(); }, function (e) { loginView(e.message); });
+        .then(function (d) { TOKEN = d.token; LS.set('dd_token', TOKEN); setProf(null); location.hash = '#/'; route(); }, function (e) { loginView(e.message); });
     };
   }
 
@@ -304,6 +375,10 @@
     [].forEach.call(document.querySelectorAll('nav a'), function (a) { var k = a.getAttribute('href').replace('#/', ''); a.className = (k === parts[0].split('?')[0] || (!k && !parts[0])) ? 'on' : ''; });
     document.getElementById('top').hidden = !TOKEN;
     if (!TOKEN || !API) return loginView(!API ? 'Lipsește adresa serverului' : '');
+    if (!PROF || parts[0] === 'profiles') return profilesView(false);
+    var me = document.getElementById('me'); me.innerHTML = avatar(PROF); me.title = PROF.name + ' · schimbă profilul';
+    document.getElementById('dl-tab').hidden = PROF.kind === 'kids';
+    document.body.classList.toggle('kids', PROF.kind === 'kids');
     window.scrollTo(0, 0);
     if (parts[0] === 'search') return search(decodeURIComponent(parts[1] || ''));
     if (parts[0] === 't') return title(decodeURIComponent(parts[1]));

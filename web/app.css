@@ -15,6 +15,14 @@ main{padding:0 0 40px}
 .btn.sec{background:#ffffff26;color:#fff}.btn.red{background:var(--acc);color:#fff}.btn.sm{padding:6px 10px;font-size:13px}
 .btn[disabled]{opacity:.5;cursor:default}
 .row{margin:18px 0 0}.row h2{margin:0 16px 8px;font-size:17px}
+.strip,nav,.tabs{scrollbar-width:none;-ms-overflow-style:none}.strip::-webkit-scrollbar,nav::-webkit-scrollbar,.tabs::-webkit-scrollbar{display:none}
+.sw{position:relative}
+.arr{position:absolute;top:0;bottom:6px;width:44px;border:0;background:#000a;color:#fff;font-size:42px;line-height:1;cursor:pointer;opacity:0;transition:opacity .2s;z-index:2;display:none}
+.arr.l{left:0;border-radius:0 6px 6px 0}.arr.r{right:0;border-radius:6px 0 0 6px}
+@media(hover:hover){.arr{display:block}.sw:hover .arr{opacity:1}.sw.at-start .arr.l,.sw.at-end .arr.r{opacity:0!important;pointer-events:none}.arr:hover{background:#000d}}
+.card.rkc{display:flex;align-items:flex-end;width:44vw;max-width:250px}
+.rkn{flex:0 0 auto;font:900 clamp(72px,15vw,150px)/.78 Impact,'Arial Black',sans-serif;color:var(--bg);-webkit-text-stroke:3px #777;letter-spacing:-6px;margin-right:-10px;margin-bottom:18px}
+.rkb{flex:1;min-width:0;position:relative;z-index:1}
 .strip{display:flex;gap:8px;overflow-x:auto;padding:0 16px 6px;scroll-snap-type:x proximity}
 .card{flex:0 0 auto;width:30vw;max-width:160px;scroll-snap-align:start;text-decoration:none;position:relative}
 .card .pw{position:relative}
@@ -39,6 +47,18 @@ input.q{width:100%;font:inherit;font-size:17px;padding:12px 14px;border-radius:8
 .rel{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid var(--line)}.rel .n{font-size:13px;word-break:break-all}.rel .m{color:var(--mut);font-size:12px}
 .prog{height:4px;background:var(--line);border-radius:2px;margin-top:6px}.prog i{display:block;height:100%;background:var(--ok);border-radius:2px}
 .mut{color:var(--mut)}.err{color:#ff6b6b}
+.me{margin-left:auto;text-decoration:none;flex:0 0 auto}
+.av{display:inline-flex;align-items:center;justify-content:center;position:relative;width:32px;height:32px;border-radius:5px;font-weight:800;color:#fff;font-size:16px}
+.av i{position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);font:700 9px/12px sans-serif;background:#fff;color:#000;padding:0 4px;border-radius:3px;font-style:normal}
+.av.big{width:min(28vw,140px);height:min(28vw,140px);font-size:min(12vw,60px);border-radius:8px}.av.big i{font-size:12px;line-height:16px;bottom:-9px;padding:0 6px}
+.av.plus{background:transparent;border:2px solid #666;color:#999}
+.who{max-width:900px;margin:0 auto;padding:12vh 16px 40px;text-align:center}.who h1{font-size:clamp(26px,5vw,46px);font-weight:500;margin:0 0 28px}
+.avs{display:flex;flex-wrap:wrap;gap:22px;justify-content:center}
+.avb{background:none;border:0;color:var(--mut);font:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:14px;padding:0}
+.avb:hover{color:#fff}.avb:hover .av{outline:3px solid #fff}.avb .x{color:#ff6b6b;font-size:13px}
+.wact{margin-top:36px}.addp{display:flex;flex-direction:column;gap:10px;min-width:260px;text-align:left}
+.addp input[name=n]{font:inherit;font-size:17px;padding:10px 12px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.addp label{color:var(--mut);font-size:14px}
 .login{max-width:360px;margin:15vh auto;padding:24px;background:var(--card);border-radius:12px}
 .login h1{color:var(--acc);letter-spacing:3px;margin:0 0 16px}
 .login input{width:100%;font:inherit;padding:12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);margin-bottom:10px}
@@ -52,4 +72,4 @@ input.q{width:100%;font:inherit;font-size:17px;padding:12px 14px;border-radius:8
 .pseek{padding-bottom:max(8px,env(safe-area-inset-bottom));font-size:12px;color:var(--mut)}.pseek input{flex:1}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:8px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:60;max-width:90vw}
 #toast.on{opacity:1}
-@media(min-width:900px){.card{width:160px}.hero{min-height:420px}}
+@media(min-width:900px){.card{width:160px}.card.rkc{width:250px}.hero{min-height:420px}}

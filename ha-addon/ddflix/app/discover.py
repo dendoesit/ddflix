@@ -93,10 +93,18 @@ def home_rows(typ=None):
     for t in ('series', 'movie'):
         if typ in (None, t):
             w = 'Seriale' if t == 'series' else 'Filme'
+            rows += [('top10_nfx_' + t, 'Top 10 ' + w.lower() + ' Netflix', 'nfx', t, None),
+                     ('top10_imdb_' + t, 'Top 10 ' + w.lower() + ' pe IMDb azi', 'imdb10', t, None)]
+    tops, rows = rows, []
+    for t in ('series', 'movie'):
+        if typ in (None, t):
+            w = 'Seriale' if t == 'series' else 'Filme'
             rows += [('pop_' + t, w + ' populare acum', 'pop', t, None), ('new_' + t, w + ' noi', 'new', t, None),
                      ('best_' + t, w + ' cu nota cea mai mare', 'best', t, None)]
     if typ is None:
         rows = [rows[0], rows[3], rows[1], rows[4], rows[2], rows[5]]
+        tops = [tops[0], tops[2], tops[1], tops[3]]
+    rows = tops + rows
     gs = {None: [('series', 'Crime'), ('movie', 'Action'), ('series', 'Sci-Fi'), ('movie', 'Comedy'), ('series', 'Drama'),
                  ('movie', 'Horror'), ('series', 'Animation'), ('series', 'Documentary')],
           'series': [('series', g) for g in ('Crime', 'Drama', 'Sci-Fi', 'Comedy', 'Action', 'Fantasy', 'Mystery', 'Animation',
@@ -106,6 +114,19 @@ def home_rows(typ=None):
     for t, g in gs:
         label = GENRE_RO.get(g, g) if typ else ('Seriale' if t == 'series' else 'Filme') + ': ' + GENRE_RO.get(g, g)
         rows.append(('g:%s:%s' % (t, g), label, 'genre', t, g))
+    return rows
+
+
+def kids_rows(typ=None):
+    rows = []
+    for t in ('series', 'movie'):
+        if typ in (None, t):
+            rows += [('kids_fam_' + t, ('Seriale' if t == 'series' else 'Filme') + ' pentru copii', 'kids', t, 'Family'),
+                     ('kids_anim_' + t, 'Desene animate' if t == 'series' else 'Filme de animație', 'kids', t, 'Animation'),
+                     ('kids_adv_' + t, ('Seriale' if t == 'series' else 'Filme') + ' de aventură', 'kids', t, 'Adventure'),
+                     ('kids_com_' + t, ('Seriale' if t == 'series' else 'Filme') + ' de comedie', 'kids', t, 'Comedy')]
+    if typ is None:
+        rows = [rows[0], rows[4], rows[1], rows[5], rows[2], rows[6], rows[3], rows[7]]
     return rows
 
 
@@ -122,6 +143,15 @@ async def pool(typ, session=None):
 async def row_ids(kind, typ, genre=None, session=None):
     if kind == 'genre':
         return await catalog(typ, 'top', genre, 0, session)
+    if kind == 'kids':  # several pages: the kids filter drops a lot
+        out = []
+        for skip in (0, 50, 100, 150):
+            out += [i for i in await catalog(typ, 'top', genre, skip, session) if i not in out]
+        return out
+    if kind == 'nfx':
+        return top_ids('nfx', typ)['ids']
+    if kind == 'imdb10':
+        return (await pool(typ, session))[:10]
     ids = await pool(typ, session)
     if kind == 'pop':
         return ids[:50]
@@ -142,8 +172,8 @@ async def warm():
             _mem[k] = (0, _mem[k][1])
         seen = set()
         for typ in (None, 'series', 'movie'):
-            for _, _, kind, t, g in home_rows(typ):
-                key = (t, g) if kind == 'genre' else (t, None)
+            for _, _, kind, t, g in home_rows(typ) + kids_rows(typ):
+                key = (kind == 'kids', t, g) if kind in ('genre', 'kids') else (False, t, None)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -261,3 +291,59 @@ def want_series(imdb):
 def ep_ratings(imdb):
     return {(r['season'], r['episode']): (r['rating'], r['votes'])
             for r in db.q('SELECT season, episode, rating, votes FROM ep_rating WHERE parent=?', (imdb,))}
+
+
+# ---------------- Top 10 (what people actually watch)
+NFX = 'https://www.netflix.com/tudum/top10/data/all-weeks-global.tsv'
+MONTHS = ['ian', 'feb', 'mar', 'apr', 'mai', 'iun', 'iul', 'aug', 'sep', 'oct', 'nov', 'dec']
+
+
+async def netflix_top():
+    """Official Netflix weekly global Top 10 (views, English + non-English merged) -> IMDb ids. Refreshed daily (new week on Tuesdays)."""
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as s:
+        async with s.get(NFX, headers=library.UA) as r:
+            r.raise_for_status()
+            text = await r.text()
+        rows = list(csv.DictReader(text.splitlines(), delimiter='\t'))
+        week = max(r_['week'] for r_ in rows)
+        for typ, pre in (('series', 'TV'), ('movie', 'Films')):
+            cur = [r_ for r_ in rows if r_['week'] == week and r_['category'].startswith(pre)]
+
+            def views(r_):
+                try:
+                    return float(r_.get('weekly_views') or 0) or float(r_.get('weekly_hours_viewed') or 0) / 1000
+                except ValueError:
+                    return 0
+            cur.sort(key=lambda r_: -views(r_))
+            ids, names = [], set()
+            for r_ in cur:
+                name = r_['show_title'].strip()
+                if name.lower() in names:
+                    continue
+                names.add(name.lower())
+                imdb = await library.match(s, name, None, typ)
+                if imdb and imdb.startswith('tt') and imdb not in ids:
+                    await library.ensure_title(s, imdb, name, None, typ)
+                    ids.append(imdb)
+                if len(ids) >= 10:
+                    break
+            if ids:
+                db.set_setting('top:nfx:' + typ, json.dumps({'week': week, 'ids': ids}))
+                log.info('netflix top10 %s week %s: %d', typ, week, len(ids))
+
+
+def top_ids(src, typ):
+    v = db.get_setting('top:%s:%s' % (src, typ))
+    return json.loads(v) if v else {'week': None, 'ids': []}
+
+
+def week_label(week):
+    """'2026-11-15' (Sunday the week ends) -> '9-15 nov'."""
+    try:
+        t = time.strptime(week, '%Y-%m-%d')
+        end = time.mktime(t)
+        st = time.localtime(end - 6 * 86400)
+        return '%d %s - %d %s' % (st.tm_mday, MONTHS[st.tm_mon - 1], t.tm_mday, MONTHS[t.tm_mon - 1]) if st.tm_mon != t.tm_mon \
+            else '%d-%d %s' % (st.tm_mday, t.tm_mday, MONTHS[t.tm_mon - 1])
+    except Exception:
+        return ''

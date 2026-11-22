@@ -9,6 +9,7 @@ from . import admin, auth, catalog, config, db, discover, filelist, library, pla
 
 log = logging.getLogger('main')
 STATIC = os.path.join(os.path.dirname(__file__), 'static')
+WEBAPP = os.path.join(os.path.dirname(__file__), 'webapp')  # copy of /web (same site as Vercel), served at /web/
 
 
 async def index(request):
@@ -39,6 +40,7 @@ async def start_jobs(app):
         every('sessions', play.gc_job, 60, 60),
         every('discover', discover.warm, 6 * 3600, 10),
         every('imdb', discover.ratings_job, 24 * 3600, 120),
+        every('top10', discover.netflix_top, 12 * 3600, 20),
     )]
 
 
@@ -56,6 +58,15 @@ def make_app():
     filelist.routes(app)
     admin.routes(app)
     app.router.add_get('/', index)
+    if os.path.isdir(WEBAPP):
+        async def web_index(request):
+            return web.FileResponse(os.path.join(WEBAPP, 'index.html'), headers={'Cache-Control': 'no-cache'})
+
+        async def web_redirect(request):
+            raise web.HTTPFound('/web/')
+        app.router.add_get('/web', web_redirect)
+        app.router.add_get('/web/', web_index)
+        app.router.add_static('/web/', WEBAPP)
     app.router.add_static('/static/', STATIC)
     app.on_startup.append(start_jobs)
     app.on_cleanup.append(stop_jobs)
