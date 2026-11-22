@@ -1,0 +1,33 @@
+# DDflix pe PC (provizoriu, până merge pe Home Assistant): servește direct din share-ul NAS "media"
+# (același folder ca Plex), doar citire. Userul și parola NAS se iau din .env (NAS_USER / NAS_PASS).
+# Kernelul WSL din Docker Desktop montează SMB doar cu vers=1.0; pe Home Assistant se folosește SMB3.
+# Pornire: docker compose -f docker-compose.pc.yml up -d --build
+services:
+  ddflix:
+    build: ./server
+    image: ddflix:latest
+    container_name: ddflix
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Europe/Bucharest
+      WEB_URL: http://192.168.1.153:8090
+      LAN_CIDR: 192.168.1.0/24,172.16.0.0/12,192.168.65.0/24,100.64.0.0/10
+      RSS_MODE: follow
+      QBT_URL: http://127.0.0.1:9
+      MAX_TRANSCODES: "2"
+      SCAN_INTERVAL_MIN: "10"
+    ports:
+      - "8090:8090"
+      - "127.0.0.1:8091:8091"   # site-ul (Firefox pe acest PC: http://localhost:8091)
+    volumes:
+      - ./data:/data
+      - nas:/media:ro
+
+volumes:
+  nas:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//192.168.1.160/${NAS_SHARE:-media}"
+      o: "addr=192.168.1.160,username=${NAS_USER},password=${NAS_PASS},vers=1.0,ro,uid=1000,gid=1000"

@@ -1,0 +1,12 @@
+const assert = require('assert');
+const { nextFocus } = require('../js/nav.js');
+const R = (id, x, y, row) => ({ id, x, y, w: 100, h: 150, row });
+const grid = [R('a1', 0, 0, 'a'), R('a2', 120, 0, 'a'), R('a3', 240, 0, 'a'), R('b1', 0, 200, 'b'), R('b2', 120, 200, 'b'), R('btn', 0, -120)];
+assert.strictEqual(nextFocus(grid, 'a1', 'right'), 'a2');
+assert.strictEqual(nextFocus(grid, 'a3', 'right'), null);
+assert.strictEqual(nextFocus(grid, 'a2', 'down'), 'b2');
+assert.strictEqual(nextFocus(grid, 'b1', 'up'), 'a1');
+assert.strictEqual(nextFocus(grid, 'a1', 'up'), 'btn');
+assert.strictEqual(nextFocus(grid, 'a1', 'left'), null);
+assert.strictEqual(nextFocus(grid, 'zz', 'left'), 'a1');
+console.log('nav ok');

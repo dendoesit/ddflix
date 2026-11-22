@@ -1,0 +1,14 @@
+.env
+data/
+qbittorrent/*
+!qbittorrent/qBittorrent/
+qbittorrent/qBittorrent/*
+!qbittorrent/qBittorrent/qBittorrent.conf
+_incoming/
+tv-app-src/
+__pycache__/
+tv/.buildResult/
+web/.vercel/
+.vercel/
+*.log
+.claude/

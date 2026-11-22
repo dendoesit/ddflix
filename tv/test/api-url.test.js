@@ -1,0 +1,13 @@
+const a = require('assert');
+global.localStorage = { s: {}, getItem(k) { return this.s[k] || null; }, setItem(k, v) { this.s[k] = String(v); }, removeItem(k) { delete this.s[k]; } };
+const log = require('../js/log.js');
+const A = require('../js/api.js');
+A.base = 'http://h:1'; A.token = 'TOK'; A.profile = '1.tick';
+a.strictEqual(A.mediaUrl('/s/abc/master.m3u8'), 'http://h:1/s/abc/master.m3u8');
+a.strictEqual(A.mediaUrl('/api/media/5/file'), 'http://h:1/api/media/5/file?t=TOK&p=1.tick');
+a.strictEqual(A.mediaUrl('/api/media/5/file?v=x'), 'http://h:1/api/media/5/file?v=x&t=TOK&p=1.tick');
+a.strictEqual(A.img('poster', 'tt1', 400), 'http://h:1/img/poster/tt1?t=TOK&w=400');
+a.strictEqual(A.profileId(), 1);
+const r = log.redact('GET http://h/api/media/5/file?t=SECRET&p=1.abc&sig=zz Authorization: Bearer XYZ');
+a.ok(!/SECRET|1\.abc|zz|XYZ/.test(r), r);
+console.log('api-url ok');

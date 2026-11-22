@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ro"><head><meta charset="utf-8"><title>DDFLIX</title>
+<meta name="viewport" content="width=1920">
+<style>
+html,body{margin:0;width:1920px;height:1080px;background:#0c0c10;overflow:hidden}
+#splash{position:fixed;left:0;top:0;width:1920px;height:1080px;z-index:90;pointer-events:none;background:#030304;opacity:1}
+#splash.fade{opacity:0}body.splashing #app{opacity:.001;transform:scale(.92);will-change:transform,opacity}#app.app-zoom{animation:appZoom 750ms cubic-bezier(.2,.7,.2,1) both}@keyframes appZoom{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}#app.app-zoom .screen--in,#app.app-zoom .pav{animation:none}#app.app-zoom .pav>*{animation:pavZoom 600ms cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(120ms + var(--d,0ms))}@keyframes pavZoom{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:none}}html.splash-bg,body.splashing{background:#030304}#splash{will-change:opacity}.sf-vid{position:absolute;left:0;top:0;width:1920px;height:1080px;background:#000;object-fit:cover}#splash.skip{transition-duration:200ms}
+.sf-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;animation:sfk 360ms linear 1300ms}
+@keyframes sfk{0%,100%{transform:none}15%{transform:translate(14px,-10px)}30%{transform:translate(-12px,8px)}45%{transform:translate(10px,10px)}60%{transform:translate(-8px,-6px)}80%{transform:translate(4px,3px)}}
+.sf-streak{position:absolute;left:960px;top:540px;height:3px;transform-origin:100% 50%;background:linear-gradient(90deg,rgba(255,43,214,0),#ff3b7a 60%,#fff);opacity:0;animation:sfst 620ms cubic-bezier(.55,0,.2,1) forwards}
+@keyframes sfst{0%{opacity:0;transform:rotate(var(--r)) translateX(-1500px) scaleX(.4)}20%{opacity:1}85%{opacity:1;transform:rotate(var(--r)) translateX(0) scaleX(1)}100%{opacity:0;transform:rotate(var(--r)) translateX(0) scaleX(.1)}}
+.sf-wrap{position:absolute;left:0;top:465px;width:1920px;height:150px;animation:sfw 1700ms linear forwards}
+@keyframes sfw{0%,47%{transform:scale(1)}62%{transform:scale(1.07)}74%{transform:scale(.98)}76%{transform:scale(1.3);opacity:1}86%{transform:scale(1.6);opacity:0}100%{transform:scale(1.6);opacity:0}}
+.sf-let{position:absolute;top:0;height:150px;opacity:0;animation:sfle 520ms cubic-bezier(.16,1,.3,1) forwards}
+.sf-let svg{display:block}
+@keyframes sfle{0%{opacity:0;transform:translate(var(--fx),var(--fy)) skewX(-30deg) scaleX(2.6)}30%{opacity:1}100%{opacity:1;transform:none}}
+.sf-full{position:absolute;left:0;top:0;width:1920px;height:150px;text-align:center;opacity:0;animation:sffo 10ms linear 1000ms forwards}
+@keyframes sffo{to{opacity:1}}
+.sf-glow{position:absolute;left:0;top:0;width:1920px;height:150px;text-align:center;opacity:0;animation:sfg 520ms ease-in 800ms forwards}
+@keyframes sfg{0%{opacity:0}100%{opacity:1}}
+.sf-clip{position:absolute;top:-25px;height:200px;overflow:hidden}
+.sf-sweep{position:absolute;left:0;top:0;width:200px;height:200px;background:linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.75),rgba(255,255,255,0));transform:translateX(-260px) skewX(-18deg);animation:sfs 480ms cubic-bezier(.5,0,.3,1) 820ms forwards}
+@keyframes sfs{to{transform:translateX(1100px) skewX(-18deg)}}
+.sf-flash{position:absolute;left:0;top:0;width:1920px;height:1080px;background:radial-gradient(ellipse at 50% 50%,#fff 0%,rgba(255,170,210,.85) 18%,rgba(255,40,120,.35) 42%,rgba(0,0,0,0) 72%);opacity:0;animation:sff 650ms cubic-bezier(.2,.8,.2,1) 1290ms forwards}
+@keyframes sff{0%{opacity:0;transform:scale(.6)}8%{opacity:1}100%{opacity:0;transform:scale(1.3)}}
+.sf-ring{position:absolute;left:-240px;top:-660px;width:2400px;height:2400px;border-radius:50%;box-sizing:border-box;border:20px solid rgba(255,90,170,.95);opacity:0;transform:scale(.04);animation:sfr 900ms cubic-bezier(.1,.7,.3,1) 1300ms forwards}
+.sf-ring2{border-width:10px;border-color:#fff;animation-delay:1380ms;animation-duration:1000ms}
+@keyframes sfr{0%{opacity:1;transform:scale(.04)}70%{opacity:.7}100%{opacity:0;transform:scale(1)}}
+.sf-p{position:absolute;left:960px;top:540px;border-radius:4px;opacity:0;transform:rotate(var(--a)) translateX(0) scaleX(.2);animation-name:sfp;animation-timing-function:cubic-bezier(.05,.8,.25,1);animation-fill-mode:forwards}
+@keyframes sfp{0%{opacity:1;transform:rotate(var(--a)) translateX(var(--sx)) scaleX(.3)}15%{opacity:1;transform:rotate(var(--a)) translateX(calc(var(--d) * .35)) scaleX(2.2)}100%{opacity:0;transform:rotate(var(--a)) translateX(var(--d)) scaleX(.4)}}
+.sf-em{position:absolute;left:960px;top:540px;border-radius:50%;opacity:0;animation-name:sfe;animation-timing-function:cubic-bezier(.1,.6,.3,1);animation-fill-mode:forwards}
+@keyframes sfe{0%{opacity:0;transform:translate(0,0) scale(.4)}10%{opacity:1}60%{opacity:.9;transform:translate(var(--x),var(--y)) scale(1)}100%{opacity:0;transform:translate(var(--x),calc(var(--y) + var(--y2))) scale(.5)}}
+</style>
+<link rel="stylesheet" href="css/tokens.css"><link rel="stylesheet" href="css/base.css"><link rel="stylesheet" href="css/screens.css"><link rel="stylesheet" href="css/player.css"><link rel="stylesheet" href="css/dash.css">
+<script src="$WEBAPIS/webapis/webapis.js"></script>
+<script>if(!window.tizen&&!window.webapis){document.write('<script src="dev/shim.js"><\/script>')}</script>
+</head><body class="splashing">
+<div id="app"></div>
+<div id="player" class="off"><object id="av" type="application/avplayer"></object><video id="vid"></video><div id="psub"></div><div id="pui"></div></div>
+<div id="dialog"></div><div id="toast"></div>
+<div id="splash"></div>
+<script src="js/config.js"></script><script src="js/buildinfo.js"></script>
+<script src="js/log.js"></script><script src="js/util.js"></script><script src="js/ui/logo.js"></script><script src="js/ui/splash.js"></script><script src="js/fmt.js"></script><script src="js/strings.js"></script><script src="js/i18n.js"></script>
+<script src="js/api.js"></script><script src="js/keys.js"></script><script src="js/nav.js"></script><script src="js/rowwin.js"></script><script src="js/router.js"></script><script src="js/lifecycle.js"></script><script src="js/images.js"></script>
+<script src="js/actions.js"></script><script src="js/ui/qr.js"></script><script src="js/ui/toast.js"></script><script src="js/ui/dialog.js"></script><script src="js/ui/card.js"></script><script src="js/ui/rail.js"></script>
+<script src="js/player/avstate.js"></script><script src="js/player/vtt.js"></script><script src="js/player/engine-avplay.js"></script><script src="js/player/engine-html5.js"></script><script src="js/player/markers.js"></script><script src="js/player/spinwait.js"></script><script src="js/player/player.js"></script><script src="js/player/sheets.js"></script>
+<script src="js/screens/pair.js"></script><script src="js/screens/profiles.js"></script><script src="js/screens/pin.js"></script><script src="js/screens/home.js"></script><script src="js/screens/title.js"></script><script src="js/screens/search.js"></script><script src="js/screens/help.js"></script><script src="js/screens/trailer.js"></script><script src="js/screens/lab.js"></script><script src="js/dashdata.js"></script><script src="js/season.js"></script><script src="js/screens/dash.js"></script>
+<script src="js/main.js"></script>
+</body></html>

@@ -1,0 +1,16 @@
+:root{
+--bg:#0c0c10;--surface:#17171b;--surface-2:#232329;--line:#ffffff1f;
+--text:#f5f5f5;--text-2:#b9b9c0;--text-3:#8a8a93;
+--accent:#e50914;--accent-press:#b80710;--ok:#3ecf6e;--warn:#f5b50a;--err:#ff5a5f;--kids:#2b77e5;--focus:#fff;
+--r-s:6px;--r-m:10px;--r-l:16px;--r-card:14px;--r-xl:28px;--r-pill:999px;
+--sx:128px;--sy:54px;
+--ease:cubic-bezier(.2,.8,.2,1);--t-fast:120ms;--t-med:200ms;--t-slow:320ms;
+--font:Inter,"SamsungOneUI","Samsung One","Samsung Sharp Sans",Roboto,Arial,sans-serif;
+--shadow-text:0 2px 12px #00000080;
+}
+body.kids{--accent:var(--kids)}
+@font-face{font-family:'Oxanium';src:url(Oxanium.ttf) format('truetype');font-weight:200 800}
+.bf-wm{font-family:'Oxanium',var(--font);font-weight:800;letter-spacing:.3em;padding-left:.3em;background:linear-gradient(180deg,#fff,#d4d7e0 55%,#9aa0b0);-webkit-background-clip:text;color:transparent;white-space:nowrap}
+.bf-lock{display:inline-block;white-space:nowrap}
+.bf-lock svg,.bf-lock .bf-wm{display:inline-block;vertical-align:middle}
+.bf-lock .bf-wm{margin-left:.35em}

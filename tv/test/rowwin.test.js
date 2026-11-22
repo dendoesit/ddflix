@@ -1,0 +1,26 @@
+const a = require('assert'), R = require('../js/rowwin.js'), G = R.G;
+a.strictEqual(G.rowH, 546); a.strictEqual(G.rowHF, 732);
+let L = R.layout({ zone: 'hero', row: 0 }, 5); a.strictEqual(L.Y, 0); a.strictEqual(L.ys[1] - L.ys[0], 546);
+L = R.layout({ zone: 'rows', row: 2 }, 5);
+a.strictEqual(L.ys[2] - L.Y, 120, 'focused row title at y 120');
+a.strictEqual(L.ys[3] - L.ys[2], 732, 'focused row is taller');
+a.strictEqual(L.ys[3] - L.Y, 852, 'next row title at 852');
+a.deepStrictEqual(R.visibleRows({ zone: 'rows', row: 0 }, 5), [0, 1]);
+a.deepStrictEqual(R.visibleRows({ zone: 'rows', row: 4 }, 5), [3, 4]);
+a.deepStrictEqual(R.visibleRows({ zone: 'hero' }, 5), [0, 1]);
+a.deepStrictEqual(R.windowCols(0, 30, true), [0, 1, 2, 3, 4]);
+a.deepStrictEqual(R.windowCols(28, 30, false), [28, 29]);
+a.deepStrictEqual(R.windowCols(3, 4, true), [3]);
+let m = { zone: 'hero', row: 0, col: [] };
+m = R.vmove(m, 'down', 3, true); a.strictEqual(m.zone, 'tiles');
+m = R.vmove(m, 'down', 3, true); a.strictEqual(m.zone, 'rows'); a.strictEqual(m.row, 0);
+m = R.vmove(m, 'down', 3, true); m = R.vmove(m, 'down', 3, true); m = R.vmove(m, 'down', 3, true); a.strictEqual(m.row, 2, 'clamped at last row');
+for (let i = 0; i < 10; i++) m = R.vmove(m, 'up', 3, true);
+a.strictEqual(m.zone, 'hero', 'up always ends at the top');
+a.strictEqual(R.vmove({ zone: 'hero' }, 'up', 3, true).zone, 'hero');
+a.strictEqual(R.vmove({ zone: 'hero' }, 'down', 3, false).zone, 'rows');
+a.strictEqual(R.hmove(0, 'left', 10), 0); a.strictEqual(R.hmove(9, 'right', 10), 9); a.strictEqual(R.hmove(8, 'right', 10, 2), 9);
+console.log('rowwin ok');
+{ const s = R.splitRo([{ key: 'k:popular' }, { key: 'k:ro' }, { key: 'k:all' }], true);
+  a.strictEqual(s.ro.key, 'k:ro'); a.deepStrictEqual(s.rest.map(r => r.key), ['k:popular', 'k:all']);
+  const s2 = R.splitRo([{ key: 'k:ro' }], false); a.strictEqual(s2.ro, null); a.strictEqual(s2.rest.length, 1); }

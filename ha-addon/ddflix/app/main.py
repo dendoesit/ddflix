@@ -1,0 +1,76 @@
+"""DDflix server: python -m app.main"""
+import asyncio
+import logging
+import os
+
+from aiohttp import web
+
+from . import admin, auth, catalog, config, db, discover, filelist, library, play, rss
+
+log = logging.getLogger('main')
+STATIC = os.path.join(os.path.dirname(__file__), 'static')
+
+
+async def index(request):
+    return web.FileResponse(os.path.join(STATIC, 'index.html'), headers={
+        'Cache-Control': 'no-cache',
+        'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"})
+
+
+async def every(name, fn, interval_s, first_s):
+    await asyncio.sleep(first_s)
+    while True:
+        try:
+            await fn()
+        except Exception as e:  # one failing job never kills the loop
+            log.warning('job %s: %s', name, config.mask(e))
+        await asyncio.sleep(interval_s)
+
+
+async def start_jobs(app):
+    import shutil
+    shutil.rmtree(os.path.join(config.DATA_DIR, 'stream'), ignore_errors=True)
+    if config.DISABLE_JOBS:
+        return
+    app['jobs'] = [asyncio.ensure_future(j) for j in (
+        every('scan', library.scan, config.SCAN_INTERVAL_MIN * 60, 5),
+        every('rss', rss.run_once, config.RSS_INTERVAL_MIN * 60, 30),
+        every('keyframes', library.kf_job, 120, 90),
+        every('sessions', play.gc_job, 60, 60),
+        every('discover', discover.warm, 6 * 3600, 10),
+        every('imdb', discover.ratings_job, 24 * 3600, 120),
+    )]
+
+
+async def stop_jobs(app):
+    for j in app.get('jobs', []):
+        j.cancel()
+
+
+def make_app():
+    db.conn()
+    app = web.Application(middlewares=[auth.guard], client_max_size=2 * 1024 * 1024)
+    auth.routes(app)
+    catalog.routes(app)
+    play.routes(app)
+    filelist.routes(app)
+    admin.routes(app)
+    app.router.add_get('/', index)
+    app.router.add_static('/static/', STATIC)
+    app.on_startup.append(start_jobs)
+    app.on_cleanup.append(stop_jobs)
+    return app
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s %(message)s')
+    logging.getLogger('aiohttp.access').setLevel(logging.WARNING)
+    async def serve():
+        runner = web.AppRunner(make_app(), access_log=None)
+        await runner.setup()
+        await web.TCPSite(runner, '0.0.0.0', config.PORT).start()          # LAN: TVs + admin page
+        await web.TCPSite(runner, '0.0.0.0', config.PUBLIC_PORT).start()   # public (Funnel): token/password only
+        log.info('DDflix on :%d (LAN) and :%d (public)', config.PORT, config.PUBLIC_PORT)
+        while True:
+            await asyncio.sleep(3600)
+    asyncio.run(serve())

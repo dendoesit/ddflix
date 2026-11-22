@@ -1,0 +1,41 @@
+name: DDflix
+version: "1.2.0"
+slug: ddflix
+description: Netflix local - seriale/filme de pe NAS, căutare + descărcare FileList, qBittorrent inclus
+url: https://github.com/dendoesit/ddflix
+arch: [aarch64, amd64]
+startup: application
+boot: auto
+init: false
+ports:
+  8090/tcp: 8090
+  8091/tcp: 8091
+  8080/tcp: 8081
+  6881/tcp: 6881
+  6881/udp: 6881
+ports_description:
+  8090/tcp: DDflix (televizoare + admin, doar rețeaua de acasă)
+  8091/tcp: DDflix public (prin Tailscale Funnel, doar cu parolă)
+  8080/tcp: qBittorrent Web UI
+  6881/tcp: BitTorrent
+  6881/udp: BitTorrent
+map:
+  - media:rw
+options:
+  media_dir: /media/nas
+  download_dir: /media/nas
+  filelist_user: ""
+  filelist_rss_url: ""
+  rss_mode: follow
+  web_password: ""
+  web_url: http://192.168.1.156:8090
+  lan_cidr: 192.168.1.0/24
+schema:
+  media_dir: str
+  download_dir: str
+  filelist_user: str
+  filelist_rss_url: password
+  rss_mode: list(follow|all)
+  web_password: password
+  web_url: str
+  lan_cidr: str

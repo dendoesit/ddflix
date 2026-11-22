@@ -1,0 +1,183 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>@font-face{font-family:Oxanium;src:url(../../fonts/Oxanium.ttf);font-weight:200 800}body{margin:0;background:#000}canvas{display:block}</style></head><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// BUBUFLIX splash, rendered offline frame by frame (deterministic). Emblem A geometry in a 200-unit box.
+var W = 1920, H = 1080, FPS = 60, DUR = 3.9;
+var c = document.getElementById('c'), MAIN = c.getContext('2d'), x = MAIN;
+var gc = document.createElement('canvas'); gc.width = W; gc.height = H; var GL = gc.getContext('2d');
+var bc = document.createElement('canvas'); bc.width = W / 2; bc.height = H / 2; var BL = bc.getContext('2d');
+function bloom() { // multi-pass blur of the additive glow layer at half res, added back at three radii
+  MAIN.save(); MAIN.setTransform(1, 0, 0, 1, 0, 0); MAIN.globalCompositeOperation = 'lighter';
+  [[5, .55], [16, .6], [44, .7], [120, .8]].forEach(function (b) {
+    BL.setTransform(1, 0, 0, 1, 0, 0); BL.globalCompositeOperation = 'copy'; BL.filter = 'blur(' + (b[0] / 2) + 'px)'; BL.drawImage(gc, 0, 0, W / 2, H / 2); BL.filter = 'none';
+    MAIN.globalAlpha = b[1]; MAIN.drawImage(bc, 0, 0, W, H);
+  });
+  MAIN.globalAlpha = 1; MAIN.drawImage(gc, 0, 0); MAIN.restore();
+}
+var S = 2.3, EX = W / 2 - 100 * S, EY = 430 - 100 * S;            // emblem 460 px, centred at y=430
+var STEM = 'M56 18H56C68 18 78 28 78 40V160C78 172 68 182 56 182C44 182 34 172 34 160V40C34 28 44 18 56 18Z';
+var TOP = 'M56 18H112C142 18 160 36 160 60C160 84 142 100 112 100H56Z';
+var BOT = 'M56 92H122C154 92 172 112 172 138C172 164 154 182 122 182H56Z';
+var SHADE = 'M56 92H112C135 92 150 96 158 104C142 100 128 100 112 100H56Z';
+var GLOSS = 'M40 24C60 18 120 16 150 40C130 30 90 30 40 46Z';
+var P = { stem: new Path2D(STEM), top: new Path2D(TOP), bot: new Path2D(BOT), shade: new Path2D(SHADE), gloss: new Path2D(GLOSS) };
+var LEN = { stem: 420, top: 330, bot: 360 };
+function rng(s) { return function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; }
+function clamp(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+function seg(t, a, b) { return clamp((t - a) / (b - a)); }
+function eo(t) { return 1 - Math.pow(1 - t, 3); }
+function eio(t) { return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+function grad(a, b, stops) { var g = x.createLinearGradient(a[0], a[1], b[0], b[1]); stops.forEach(function (s) { g.addColorStop(s[0], s[1]); }); return g; }
+var GA = function () { return grad([0, 0], [200, 200], [[0, '#ff2d7a'], [.55, '#ff7a2f'], [1, '#ffb347']]); };
+var GB = function () { return grad([34, 18], [78, 182], [[0, '#7b3cff'], [1, '#ff2d9a']]); };
+var GC = function () { return grad([56, 182], [172, 92], [[0, '#ff1f4b'], [1, '#ff8a3d']]); };
+// dust
+var R = rng(7), DUST = []; for (var i = 0; i < 140; i++) DUST.push([R() * W, R() * H, .5 + R() * 2, R() * 6.28, .2 + R() * .6]);
+// burst particles sampled from the emblem
+var PART = [];
+(function () {
+  var oc = document.createElement('canvas'); oc.width = W; oc.height = H; var g = oc.getContext('2d');
+  g.setTransform(S, 0, 0, S, EX, EY); g.fillStyle = '#fff'; g.fill(P.stem); g.fill(P.top); g.fill(P.bot);
+  var d = g.getImageData(0, 0, W, H).data, pts = [];
+  for (var yy = 0; yy < H; yy += 3) for (var xx = 0; xx < W; xx += 3) if (d[(yy * W + xx) * 4 + 3] > 100) pts.push([xx, yy]);
+  var r = rng(11);
+  for (var k = 0; k < 5200; k++) {
+    var p = pts[(r() * pts.length) | 0], dx = p[0] - W / 2, dy = p[1] - 430, dd = Math.sqrt(dx * dx + dy * dy) || 1, sp = 300 + r() * 1500 * (r() < .2 ? 1.8 : 1);
+    PART.push({ x: p[0], y: p[1], vx: dx / dd * sp + (r() - .5) * 400, vy: dy / dd * sp + (r() - .5) * 400, s: 1 + r() * r() * 5, life: .5 + r() * 1.0, hue: r(), seed: r() * 100 });
+  }
+})();
+function col(age, hue) { // white-hot -> gold -> orange -> magenta -> violet
+  var C = [[255, 255, 255], [255, 225, 150], [255, 140, 60], [255, 45, 120], [150, 60, 255]];
+  var f = clamp(age + hue * .25) * (C.length - 1), i = Math.min(C.length - 2, f | 0), u = f - i;
+  return C[i].map(function (v, k) { return Math.round(v + (C[i + 1][k] - v) * u); });
+}
+var TB = 2.85; // burst time
+function emblemFill(alpha) {
+  x.save(); x.setTransform(S, 0, 0, S, EX, EY); x.globalAlpha = alpha;
+  x.fillStyle = GB(); x.fill(P.stem);
+  x.globalAlpha = alpha * .93; x.fillStyle = GA(); x.fill(P.top);
+  x.globalAlpha = alpha * .9; x.fillStyle = GC(); x.fill(P.bot);
+  x.globalAlpha = alpha * .18; x.fillStyle = '#000'; x.fill(P.shade);
+  x.globalAlpha = alpha; x.fillStyle = grad([0, 18], [0, 46], [[0, 'rgba(255,255,255,.55)'], [1, 'rgba(255,255,255,0)']]); x.fill(P.gloss);
+  x.restore();
+}
+function neon(t, alpha) {
+  var order = [['stem', 0.10, 1.00, [150, 80, 255]], ['top', 0.28, 1.15, [255, 150, 50]], ['bot', 0.45, 1.30, [255, 60, 140]]];
+  var g = GL; g.save(); g.setTransform(S, 0, 0, S, EX, EY); g.lineCap = 'round'; g.lineJoin = 'round'; g.globalCompositeOperation = 'lighter';
+  order.forEach(function (o) {
+    var k = eio(seg(t, o[1], o[2])); if (k <= 0) return; var L = LEN[o[0]], c3 = o[3].join(',');
+    g.setLineDash([L * k, L * 2]);
+    g.globalAlpha = alpha * .35; g.lineWidth = 14; g.strokeStyle = 'rgb(' + c3 + ')'; g.stroke(P[o[0]]);
+    g.globalAlpha = alpha * .95; g.lineWidth = 5; g.stroke(P[o[0]]);
+    g.globalAlpha = alpha; g.lineWidth = 2.0; g.strokeStyle = 'rgb(' + o[3].map(function (v) { return Math.round(v + (255 - v) * .3); }).join(',') + ')'; g.stroke(P[o[0]]);
+    g.globalAlpha = alpha * .45; g.lineWidth = .5; g.strokeStyle = '#fff'; g.stroke(P[o[0]]);
+    // hot spark travelling at the stroke head (a short bright dash)
+    if (k < 1) { g.setLineDash([0.1, L * k - 6, 6, L * 3]); g.globalAlpha = alpha; g.lineWidth = 7; g.strokeStyle = '#fff'; g.stroke(P[o[0]]); }
+  });
+  g.restore();
+}
+function frame(i) {
+  var t = i / FPS;
+  GL.setTransform(1, 0, 0, 1, 0, 0); GL.globalCompositeOperation = 'source-over'; GL.globalAlpha = 1; GL.clearRect(0, 0, W, H);
+  x = MAIN; x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over'; x.globalAlpha = 1; x.shadowBlur = 0;
+  // background (with burst trails after TB)
+  var bg = x.createRadialGradient(W / 2, 430, 0, W / 2, 430, 1100); bg.addColorStop(0, '#1b0f1f'); bg.addColorStop(.6, '#060507'); bg.addColorStop(1, '#030304');
+  x.fillStyle = bg; x.fillRect(0, 0, W, H);
+  // camera shake at burst
+  var sh = t > TB && t < TB + .35 ? (1 - (t - TB) / .35) * 14 : 0;
+  if (sh) x.setTransform(1, 0, 0, 1, Math.sin(t * 90) * sh, Math.cos(t * 77) * sh);
+  // dust
+  x.globalCompositeOperation = 'lighter';
+  DUST.forEach(function (d) { var a = d[4] * (.4 + .6 * Math.sin(t * 1.5 + d[3])) * (1 - seg(t, TB, TB + .4) * .8); x.globalAlpha = a * .5; x.fillStyle = '#c9a0ff';
+    x.beginPath(); x.arc((d[0] + t * 12 * Math.cos(d[3])) % W, (d[1] - t * 18) % H, d[2], 0, 6.283); x.fill(); });
+  x.globalAlpha = 1;
+  // emblem glow halo
+  var charge = Math.max(seg(t, .2, 1.0) * .8, seg(t, 1.2, 1.9)) * (1 - seg(t, TB - .05, TB + .1));
+  var pre = t < TB ? seg(t, 2.3, TB) : 0;
+  if (charge > 0) { var hg = x.createRadialGradient(W / 2, 430, 0, W / 2, 430, 420 + pre * 160); hg.addColorStop(0, 'rgba(255,110,40,' + (.38 * charge + pre * .35) + ')'); hg.addColorStop(.5, 'rgba(150,50,255,' + (.16 * charge) + ')'); hg.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = hg; x.fillRect(0, 0, W, H); }
+  x.globalCompositeOperation = 'source-over';
+  // emblem: liquid-glass fly-in -> iridescent fill reveal
+  if (t < TB) {
+    var fly = eio(seg(t, 0.0, 1.55)), pre2 = seg(t, 2.3, TB);
+    var ang = (1 - fly) * -0.65, sc = 0.45 + 0.55 * fly + .04 * Math.sin(seg(t, 2.3, TB) * Math.PI) + pre2 * .05, ry = Math.cos((1 - fly) * 1.25);
+    var ox = (1 - fly) * -520, oy = (1 - fly) * 260;
+    var T = function (g) { g.setTransform(1, 0, 0, 1, 0, 0); g.translate(W / 2 + ox, 430 + oy); g.rotate(ang); g.scale(sc * ry, sc); g.translate(-100 * S, -100 * S); g.scale(S, S); };
+    var sh2 = new Path2D(); sh2.addPath(P.stem); sh2.addPath(P.top); sh2.addPath(P.bot);
+    var ga = (seg(t, 0, .35));
+    // dark glass body
+    x.save(); T(x); x.globalAlpha = ga;
+    var body = x.createLinearGradient(0, 0, 200, 200); body.addColorStop(0, 'rgba(90,50,120,.7)'); body.addColorStop(.45, 'rgba(8,6,14,.9)'); body.addColorStop(1, 'rgba(110,30,80,.7)');
+    x.fillStyle = body; x.fill(P.stem); x.fill(P.top); x.fill(P.bot);
+    // inner refraction: faint inverted copy of the halo and a thick inner edge
+    x.clip(sh2); x.lineWidth = 9; x.strokeStyle = 'rgba(255,255,255,.06)'; x.stroke(P.stem); x.stroke(P.top); x.stroke(P.bot);
+    // iridescent liquid fill rising (glass -> gradient), wavy surface
+    var lvl = eio(seg(t, 1.65, 2.35));
+    if (lvl > 0) {
+      var yy = 190 - lvl * 185, wv = new Path2D(); wv.moveTo(0, 200); wv.lineTo(0, yy);
+      for (var q = 0; q <= 200; q += 10) wv.lineTo(q, yy + Math.sin(q * .07 + t * 9) * 5 * (1 - lvl));
+      wv.lineTo(200, 200); wv.closePath(); x.save(); x.clip(wv);
+      x.globalAlpha = ga; x.fillStyle = GB(); x.fill(P.stem); x.globalAlpha = ga * .93; x.fillStyle = GA(); x.fill(P.top); x.globalAlpha = ga * .9; x.fillStyle = GC(); x.fill(P.bot);
+      x.globalAlpha = ga * .18; x.fillStyle = '#000'; x.fill(P.shade); x.restore();
+    }
+    // specular reflection band that slides with the rotation
+    var bandX = -120 + fly * 260 + seg(t, 2.35, 2.8) * 220;
+    var bg2 = x.createLinearGradient(bandX - 40, 0, bandX + 40, 0); bg2.addColorStop(0, 'rgba(255,255,255,0)'); bg2.addColorStop(.5, 'rgba(255,255,255,' + (.45 + .2 * lvl) + ')'); bg2.addColorStop(1, 'rgba(255,255,255,0)');
+    x.globalAlpha = ga; x.fillStyle = bg2; x.save(); x.translate(100, 100); x.rotate(.5); x.translate(-100, -100); x.fillRect(bandX - 40, -100, 80, 400); x.restore();
+    x.fillStyle = grad([0, 18], [0, 46], [[0, 'rgba(255,255,255,.5)'], [1, 'rgba(255,255,255,0)']]); x.fill(P.gloss);
+    x.restore();
+    // rim light + chromatic prism fringes on the glow layer (bloomed)
+    var g = GL; g.save(); g.globalCompositeOperation = 'lighter'; g.lineJoin = 'round';
+    [[-1.4, 0, 'rgba(255,40,60,'], [1.4, 0, 'rgba(40,220,255,'], [0, 1.4, 'rgba(90,80,255,'], [0, 0, 'rgba(255,255,255,']].forEach(function (f, k) {
+      T(g); g.translate(f[0], f[1]); g.globalAlpha = ga * (k === 3 ? .5 : .7) * (1 - .5 * lvl); g.lineWidth = k === 3 ? .8 : 1.6; g.strokeStyle = f[2] + '1)';
+      g.stroke(P.stem); g.stroke(P.top); g.stroke(P.bot);
+    });
+    T(g); g.globalAlpha = ga * (.16 + .4 * pre2); g.lineWidth = 4; g.strokeStyle = 'rgb(255,70,170)'; g.stroke(P.top); g.stroke(P.bot);
+    g.globalAlpha = ga * .25; g.strokeStyle = 'rgb(150,80,255)'; g.stroke(P.stem);
+    if (lvl > 0) { g.globalAlpha = .08 + .3 * pre2; g.fillStyle = '#ff6a50'; g.fill(P.top); g.fill(P.bot); }
+    g.restore();
+    // wordmark
+    var wa = eo(seg(t, 2.05, 2.55));
+    if (wa > 0) {
+      x.save(); x.globalAlpha = wa * (1 - seg(t, TB - .05, TB + .05)); x.font = '800 74px Oxanium'; x.textAlign = 'center'; x.textBaseline = 'middle';
+      if (x.letterSpacing !== undefined) x.letterSpacing = '22px';
+      var wg = x.createLinearGradient(0, 760, 0, 820); wg.addColorStop(0, '#ffffff'); wg.addColorStop(.55, '#d4d7e0'); wg.addColorStop(1, '#9aa0b0'); x.fillStyle = wg;
+      x.fillText('BUBUFLIX', W / 2 + 11, 790 + (1 - wa) * 24); x.restore();
+    }
+  }
+  // burst (drawn into the glow layer)
+  if (t >= TB) {
+    var tb = t - TB; x = GL; if (sh) GL.setTransform(1, 0, 0, 1, Math.sin(t * 90) * sh, Math.cos(t * 77) * sh);
+    x.globalCompositeOperation = 'lighter';
+    // flash
+    var fl = Math.pow(Math.max(0, 1 - tb / .4), 2) * .55;
+    if (fl > 0) { var fg = x.createRadialGradient(W / 2, 430, 0, W / 2, 430, 500 + tb * 900); fg.addColorStop(0, 'rgba(255,255,255,' + fl + ')'); fg.addColorStop(.25, 'rgba(255,170,120,' + fl * .7 + ')'); fg.addColorStop(.6, 'rgba(255,40,140,' + fl * .25 + ')'); fg.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = fg; x.fillRect(0, 0, W, H); }
+    // shockwave rings
+    [[0, .8, '255,110,190'], [.07, .5, '255,190,120']].forEach(function (r) {
+      var q = clamp((tb - r[0]) / .8); if (q <= 0 || q >= 1) return; var rad = eo(q) * 1500;
+      x.globalAlpha = (1 - q) * r[1]; x.strokeStyle = 'rgba(' + r[2] + ',1)'; x.lineWidth = 10 * (1 - q) + 1.5; 
+      x.beginPath(); x.ellipse(W / 2, 430, rad, rad * .62, 0, 0, 6.283); x.stroke();
+    });
+    x.globalAlpha = 1;
+    // particles with trails (drawn as short lines along velocity)
+    PART.forEach(function (p) {
+      var age = tb / p.life; if (age >= 1) return;
+      var drag = Math.exp(-tb * 2.2), dist = (1 - drag) / 2.2;
+      var px = p.x + p.vx * dist + Math.sin(p.seed + tb * 3) * 30 * tb, py = p.y + p.vy * dist + 60 * tb * tb + Math.cos(p.seed * 1.3 + tb * 2.5) * 30 * tb;
+      var vx = p.vx * drag, vy = p.vy * drag, tl = .045;
+      var cc = col(age, p.hue), a = (1 - age) * (1 - age) * seg(tb, 0, .12) * .85;
+      x.globalAlpha = a; x.strokeStyle = 'rgb(' + cc + ')'; x.lineWidth = p.s * .7 * (1 - age * .5); x.lineCap = 'round';
+      x.beginPath(); x.moveTo(px - vx * tl, py - vy * tl); x.lineTo(px, py); x.stroke();
+      if (age < .35) { x.globalAlpha = a * .8; x.strokeStyle = '#fff'; x.lineWidth = Math.max(.6, p.s * .4); x.stroke(); }
+    });
+    x.globalAlpha = 1; x.globalCompositeOperation = 'source-over'; x = MAIN;
+  }
+  bloom();
+  // vignette
+  MAIN.setTransform(1, 0, 0, 1, 0, 0); var vg = MAIN.createRadialGradient(W / 2, H / 2, 380, W / 2, H / 2, 1150); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.7)'); MAIN.fillStyle = vg; MAIN.fillRect(0, 0, W, H);
+  return c.toDataURL('image/jpeg', 0.93);
+}
+window.frame = frame; window.FRAMES = Math.round(DUR * FPS);
+document.fonts.load('800 74px Oxanium').then(function () { window.READY = true; });
+</script>
+</body></html>
