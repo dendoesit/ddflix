@@ -760,8 +760,8 @@
     var h = location.hash.replace(/^#\/?/, ''), parts = h.split('/');
     [].forEach.call(document.querySelectorAll('nav a'), function (a) { var k = a.getAttribute('href').replace('#/', ''); a.className = (k === parts[0].split('?')[0] || (!k && !parts[0])) ? 'on' : ''; });
     document.getElementById('top').hidden = !TOKEN;
+    var pc = /[?&]code=([A-Za-z0-9-]+)/.exec(h); if (pc) LS.set('dd_paircode', pc[1]);  // before the login: it must survive it
     if (!TOKEN || !API) return loginView(!API ? 'Lipsește adresa serverului' : '');
-    var pc = /[?&]code=([A-Za-z0-9-]+)/.exec(h); if (pc) LS.set('dd_paircode', pc[1]);
     if (!PROF || parts[0] === 'profiles') return profilesView(false);
     if (LS.get('dd_paircode') && parts[0].split('?')[0] !== 'settings') { var c0 = LS.get('dd_paircode'); location.hash = '#/settings?code=' + c0; return; }
     var me = document.getElementById('me'); me.innerHTML = avatar(PROF); me.title = PROF.name + ' · schimbă profilul';
