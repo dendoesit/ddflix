@@ -115,7 +115,7 @@
   function cancelSeek() { clearTimeout(C.pendT); C.pend = null; paint(); }
   function seekTo(t) {
     var st = P.st; if (!st || !eng) return;
-    st.pos = t; st.advAt = 0; st.stallAt = 0; spin(true, t);
+    st.pos = t; st.advAt = 0; st.stallAt = 0; st.seekAt = Date.now(); spin(true, t);
     eng.seek(t - (st.offset || 0), function () { st.advAt = Date.now(); saveProgress(); });
   }
   // spinner (round 7): armed by open/seek/stall/buffering, cleared only by real position progress (BF.spinwait) or pause/error/close
@@ -210,11 +210,23 @@
     clearInterval(stallT);
     stallT = setInterval(function () {
       var st = P.st; if (!st) { clearInterval(stallT); return; }
-      spinRender(); autoOrig(st);
+      spinRender(); autoOrig(st); unstick(st);
       if (st.sm.phase !== 'playing' || st.paused || C.pend != null || st.stallAt || !st.advAt) return;
       var dur = st.m.duration || st.duration; if (dur && dur - st.pos < 2) return;
       if (Date.now() - st.advAt > STALL_MS) { st.stallAt = st.advAt; spin(true); }
     }, 200);
+  }
+  // stuck for good (server restarted, connection dropped, a seek that never lands): reopen the stream at the same spot.
+  // At most once per 20 s; the normal stall spinner keeps showing meanwhile.
+  var STUCK_MS = 10000;
+  function unstick(st) {
+    if (!st.started || st.paused || C.pend != null || st.sm.phase === 'error') return;
+    var since = st.stallAt || (!st.advAt && st.seekAt) || 0, now = Date.now();
+    if (!since || now - since < STUCK_MS || (st.unstuckAt && now - st.unstuckAt < 20000)) return;
+    st.unstuckAt = now; st.stallAt = 0; st.seekAt = 0; st.advAt = 0;
+    BF.log('player', 'stuck ' + (now - since) + 'ms at ' + Math.floor(st.pos) + ': reopening');
+    A.playEvent({ mediaId: st.m.id, kind: 'tv_unstick', mode: st.sm.mode, detail: { ms: now - since, pos: Math.floor(st.pos) } });
+    P.restart(st.pos);
   }
   // quality fallback (round 7): transcode stalls > 8 s twice in 2 min, or transcode startup > 15 s -> original/direct at the same position, once per session
   function autoOrig(st) {
