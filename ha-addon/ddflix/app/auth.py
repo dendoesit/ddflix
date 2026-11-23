@@ -82,7 +82,7 @@ def default_profile(dev):
     return db.q1("SELECT * FROM profile WHERE pin_hash IS NULL OR pin_hash='' ORDER BY kind='kids' DESC, id LIMIT 1")
 
 
-PUBLIC = ('/api/device/pair/start', '/api/device/pair/poll', '/api/device/ping', '/api/health', '/api/web/login')
+PUBLIC = ('/api/device/pair/start', '/api/device/pair/poll', '/api/device/ping', '/api/health', '/api/where', '/api/web/login')
 
 
 @web.middleware

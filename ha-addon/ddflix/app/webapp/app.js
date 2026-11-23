@@ -9,6 +9,15 @@
   if (qsApi) { LS.set('dd_api', decodeURIComponent(qsApi)); history.replaceState(null, '', location.pathname + location.hash); }
   var SAME = /^\/web\//.test(location.pathname);
   var API = SAME ? location.origin : (qsApi ? decodeURIComponent(qsApi) : window.DDFLIX_API || LS.get('dd_api') || '').replace(/\/$/, '');
+  // opened from the public site while at home: the public route (Tailscale Funnel) is slow, the home server is ~100x
+  // faster -> go to its own copy of this app (a top-level http navigation is allowed from https). ?stay=1 skips it.
+  if (!SAME && API && !/[?&]stay=1/.test(location.search) && window.fetch) {
+    var wc = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    if (wc) setTimeout(function () { wc.abort(); }, 8000);
+    fetch(API + '/api/where', { signal: wc ? wc.signal : undefined }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.home && /^http:\/\//.test(d.lan || '')) location.replace(d.lan + location.hash);
+    }).catch(function () { /* stay */ });
+  }
   var TOKEN = LS.get('dd_token') || '';
   var PROF = null;  // {id, name, kind, avatar, header}
   try { PROF = JSON.parse(LS.get('dd_prof') || 'null'); } catch (e) { PROF = null; }

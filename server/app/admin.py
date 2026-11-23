@@ -1,6 +1,8 @@
 """Web admin API (LAN browser only; devices get 403 from the guard) + health + dashboard."""
 import asyncio
+import ipaddress
 import os
+import time
 
 import aiohttp
 
@@ -18,6 +20,47 @@ def web_only(fn):
 
 async def health(request):
     return jok({'ok': True, 'files': library.STATUS['files'], 'time': db.now()})
+
+
+_home = {'at': 0, 'ips': set()}
+
+
+async def home_ips():
+    """This house's public IPv4 / IPv6 (as the internet sees the server), refreshed every 10 min."""
+    if _home['ips'] and time.time() - _home['at'] < 600:
+        return _home['ips']
+    ips = set()
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6)) as s:
+        for u in ('https://api.ipify.org', 'https://api6.ipify.org'):
+            try:
+                async with s.get(u) as r:
+                    ips.add((await r.text()).strip())
+            except Exception:
+                pass
+    _home.update(at=time.time(), ips=ips)
+    return ips
+
+
+def same_place(a, b):
+    try:
+        x, y = ipaddress.ip_address(a), ipaddress.ip_address(b)
+    except ValueError:
+        return False
+    if x.version != y.version:
+        return False
+    if x.version == 4:
+        return x == y
+    return ipaddress.ip_network('%s/64' % x, strict=False) == ipaddress.ip_network('%s/64' % y, strict=False)
+
+
+async def where(request):
+    """Is this browser at home? The public site then switches to the home server's own copy (much faster)."""
+    from . import auth
+    home = not auth.is_public(request)
+    if not home:
+        ip = auth.peer_ip(request)
+        home = any(same_place(ip, h) for h in await home_ips())
+    return jok({'home': home, 'lan': config.WEB_URL + '/web/'})
 
 
 async def dashboard(request):
@@ -127,6 +170,7 @@ async def match(request):
 def routes(app):
     r = app.router
     r.add_get('/api/health', health)
+    r.add_get('/api/where', where)
     r.add_get('/api/dashboard', dashboard)
     r.add_get('/api/admin/status', status)
     r.add_get('/api/admin/follows', follows_get)
