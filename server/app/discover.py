@@ -24,10 +24,10 @@ GENRES = {
     'movie': ['Action', 'Adventure', 'Animation', 'Biography', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History',
               'Horror', 'Mystery', 'Romance', 'Sci-Fi', 'Sport', 'Thriller', 'War', 'Western'],
 }
-GENRE_RO = {'Action': 'Acțiune', 'Adventure': 'Aventură', 'Animation': 'Animație', 'Biography': 'Biografic', 'Comedy': 'Comedie',
-            'Crime': 'Crimă', 'Documentary': 'Documentar', 'Drama': 'Dramă', 'Family': 'Familie', 'Fantasy': 'Fantasy', 'History': 'Istoric',
-            'Horror': 'Horror', 'Mystery': 'Mister', 'Reality-TV': 'Reality', 'Romance': 'Romantic', 'Sci-Fi': 'SF', 'Sport': 'Sport',
-            'Thriller': 'Thriller', 'War': 'Război', 'Western': 'Western'}
+GENRE_RO = {'Action': 'Acțiune', 'Adventure': 'Aventură', 'Animation': 'Animație', 'Biography': 'Biografii', 'Comedy': 'Comedii',
+            'Crime': 'Polițiste', 'Documentary': 'Documentare', 'Drama': 'Dramă', 'Family': 'Copii și familie', 'Fantasy': 'Fantastic',
+            'History': 'Istorie', 'Horror': 'Horror', 'Mystery': 'Mister', 'Reality-TV': 'Reality', 'Romance': 'Dragoste', 'Sci-Fi': 'SF',
+            'Sport': 'Sport', 'Thriller': 'Thriller', 'War': 'Război', 'Western': 'Western', 'Music': 'Muzică', 'Musical': 'Muzicale'}  # = TV app
 _mem = {}  # key -> (fetched_at, [imdb])
 _lock = asyncio.Lock()
 

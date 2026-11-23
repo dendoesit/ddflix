@@ -194,7 +194,10 @@ async def start_download(rel, device_id=None, episode=None):
         h = torrent_hash(data)
         q = rss.Qbt(s)
         await q.prepare()
-        one = episode is not None and rel['episode'] is None and rel['season'] is not None
+        one = episode is not None and rel['episode'] is None
+    if season is not None and episode is None and rel['episode'] is not None:
+        # "download season N" while the season is still airing: FileList has no pack yet, only episodes -> get them all
+        return await season_from_episodes(request, imdb, int(season), k4, dev, b.get('dryRun')) and rel['season'] is not None
         existing = {t.get('hash') for t in await q.list()}
         if h in existing:
             if one:
@@ -280,6 +283,34 @@ async def tv_download(request):
         return jerr(502, config.mask(e)[:200])
     d = {'id': h, 'state': 'queued', 'progress': 0, 'name': rel['name'], 'imdb': imdb, 'season': rel['season'], 'releaseId': rel['id']}
     return jok({'ok': True, 'download': d, 'release': release_out(rel, d)})
+
+
+async def season_from_episodes(request, imdb, season, k4, dev, dry):
+    eps = sorted({r['episode'] for r in releases(imdb) if r['season'] == season and r['episode'] is not None and r['seeders'] > 0})
+    have = {(f['season'], f['episode']) for f in db.q('SELECT season, episode FROM media_file WHERE imdb=? AND missing=0', (imdb,))}
+    active = {(d['season'], d.get('episode')) for d in await downloads_for(imdb) if d['state'] != 'error'}
+    todo = [e for e in eps if (season, e) not in have and (season, e) not in active]
+    picks = [r for r in (pick(imdb, season, e, k4) for e in todo) if r]
+    if not picks:
+        if eps:
+            d = next((d for d in await downloads_for(imdb) if d['season'] == season), None)
+            return jok({'ok': True, 'download': d, 'release': release_out(pick(imdb, season, eps[0], k4)), 'episodes': []})
+        return jerr(404, 'Nu am găsit nimic cu seederi pe FileList')
+    if dry:
+        return jok({'ok': True, 'dryRun': True, 'download': None, 'release': release_out(picks[0]), 'episodes': [r['episode'] for r in picks]})
+    first = None
+    for r in picks:
+        try:
+            h = await start_download(r, dev['id'] if dev else None)
+        except Exception as e:
+            log.warning('season %s S%d E%s: %s', imdb, season, r['episode'], config.mask(e)[:150])
+            continue
+        if first is None:
+            first = {'id': h, 'state': 'queued', 'progress': 0, 'name': r['name'], 'imdb': imdb, 'season': season, 'episode': r['episode'],
+                     'releaseId': r['id']}
+    if first is None:
+        return jerr(502, 'qBittorrent nu a acceptat descărcările')
+    return jok({'ok': True, 'download': first, 'release': release_out(picks[0]), 'episodes': [r['episode'] for r in picks]})
 
 
 _dl_rate = {}

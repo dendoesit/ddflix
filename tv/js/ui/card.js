@@ -15,6 +15,7 @@
       // resume bar on every rail: own play data (Continue row) or the per-title map built from /api/continue
       var pc = item.play && item.play.pct > 0 ? item.play.pct : (BF.state && BF.state.progress && BF.state.progress[item.imdb]);
       if (pc > 0) { var pb = u.el('div', 'pbar'); var f = u.el('i'); f.style.width = Math.max(4, Math.round(pc * 100)) + '%'; pb.appendChild(f); c.appendChild(pb); }
+      if (item.rank) c.appendChild(u.txt('div', 'poster-rank', String(item.rank)));
       if (item.rating) c.appendChild(u.txt('div', 'poster-imdb', 'IMDb ' + Number(item.rating).toFixed(1)));
       if (item.inLibrary) c.appendChild(u.txt('div', 'poster-nas', 'NAS'));
       c.appendChild(u.el('div', 'ring'));

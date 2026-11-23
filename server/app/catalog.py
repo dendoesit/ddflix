@@ -178,7 +178,7 @@ async def build_home(request):
         if cs:
             rows.append({'key': key, 'title': title, 'items': cs, 'link': link})
 
-    row('new', 'Pe NAS-ul tău', by_added[:40], '#/browse?sort=added' + ('&type=' + typ if typ else ''))
+    # the NAS library row is "Adăugate recent în bibliotecă" from /api/library/recent on the TV and the web (same place, same name)
     pats = [r['pattern'] for r in db.q('SELECT pattern FROM follow')] if not (p and p['kind'] == 'kids') else []
     if pats:
         fl = db.q('SELECT * FROM title WHERE name IN (%s) AND (type=? OR ? IS NULL)' % ','.join('?' * len(pats)), pats + [typ, typ])

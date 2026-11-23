@@ -48,15 +48,15 @@ main{padding:0 0 84px}
 .mut{color:var(--mut)}.err{color:#ff5a5f}.pad{padding:16px var(--sx)}
 
 /* ---------- hero (rounded card, logo, scrim) */
-.hero{position:relative;margin:16px 12px 0;height:max(440px,66vh);border-radius:22px;overflow:hidden;border:1px solid #ffffff33;background:var(--card)}
+.hero{position:relative;margin:14px 12px 0;height:max(300px,62vw);border-radius:18px;overflow:hidden;border:1px solid #ffffff33;background:var(--card)}
 .hero .hbg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:right top}
 .hero .scrim{position:absolute;inset:0;background:linear-gradient(90deg,#000000cc 0%,#00000080 45%,#0000 70%),linear-gradient(0deg,#000000d9 0%,#0000 55%)}
 .hero{display:flex;flex-direction:column;justify-content:flex-end}
 .hero .hc{position:relative;padding:0 20px}
-.hlogo img{display:block;max-width:min(78%,420px);max-height:120px;object-fit:contain;object-position:left bottom}
+.hlogo img{display:block;max-width:min(62%,420px);max-height:84px;object-fit:contain;object-position:left bottom}
 .hlogo .hn{font:800 clamp(30px,5vw,56px)/1.05 var(--font);text-shadow:var(--shadow);margin:0}
 .hmeta{font-weight:700;font-size:15px;margin:14px 0 6px;text-shadow:var(--shadow)}
-.hsyn{margin:0;max-width:640px;font-size:15px;line-height:1.5;text-shadow:var(--shadow);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.hsyn{margin:0;max-width:640px;font-size:13px;line-height:1.45;text-shadow:var(--shadow);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .hero .hbtns{position:relative;padding:12px 20px 20px;display:flex;flex-wrap:wrap;align-items:center}
 .hero .hbtns .btn{padding:11px 20px}
 .hero .hchips{position:absolute;right:20px;top:18px;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}.hero .hchips .pill{margin:0}
