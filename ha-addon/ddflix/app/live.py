@@ -14,7 +14,7 @@ from aiohttp import web
 from . import config, db, library, rss
 
 log = logging.getLogger('live')
-CHUNK = 512 * 1024
+CHUNK = 2 * 1024 * 1024
 HEAD_BYTES = 24 * 1024 * 1024   # the start that must be there before an episode is offered
 TAIL_BYTES = 4 * 1024 * 1024    # MKV cues / MP4 moov at the end (first+last piece priority fetches it early)
 WAIT_MAX = 120                  # a request waits this long for missing pieces, then ends (the player retries)
@@ -110,7 +110,7 @@ async def tune(h, t):
         log.info('tune %s: %s', h[:8], config.mask(e)[:120])
 
 
-PLAY_CAP = 20 * 1024 * 1024  # while someone watches, torrents may not take the whole NIC (HA Green writes them to the NAS too)
+PLAY_CAP = 10 * 1024 * 1024  # while someone watches, torrents may not take the whole NIC (HA Green writes them to the NAS too)
 _cap = {'on': None}
 
 
@@ -225,15 +225,30 @@ async def serve(request, f):
     if request.method == 'HEAD':
         return resp
     loop = asyncio.get_running_loop()
-    pos, waited = start, 0.0
+
+    fh = {'f': None, 'p': None}
 
     def read(p, a, n):
-        with open(p, 'rb') as fh:
-            fh.seek(a)
-            return fh.read(n)
+        if fh['p'] != p:
+            if fh['f']:
+                fh['f'].close()
+            fh['f'], fh['p'] = open(p, 'rb'), p
+        fh['f'].seek(a)
+        return fh['f'].read(n)
+    try:
+        await _pump(request, resp, f, h, fi, start, end, read, loop)
+    finally:
+        if fh['f']:
+            fh['f'].close()
+    return resp
+
+
+async def _pump(request, resp, f, h, fi, start, end, read, loop):
+    from . import play
+    pos, waited = start, 0.0
     while pos < end:
         n = min(CHUNK, end - pos)
-        i = await info(h)
+        i = await info(h, 2.0)
         fi = file_of(i, f['path']) if i else fi
         if not have(i, fi, pos, pos + n):
             if waited >= WAIT_MAX:
@@ -253,7 +268,6 @@ async def serve(request, f):
         play.ACTIVE['at'] = time.time()
         try:
             await resp.write(data)
-        except (ConnectionResetError, asyncio.CancelledError):
-            raise
+        except ConnectionResetError:
+            return  # the player went away / seeked
         pos += len(data)
-    return resp
