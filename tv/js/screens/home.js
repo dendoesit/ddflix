@@ -134,57 +134,32 @@
       if (!r._nodes[k]) r._nodes[k] = BF.card.poster(item);
       return r._nodes[k];
     }
-    function tileNode(r, item, isCont) {
-      var k = 't' + item.imdb;
-      if (r._nodes[k]) return r._nodes[k];
-      var t = U.el('div', 'ftile');
-      var ph = U.el('img', 'art ftile-ph'); t.appendChild(ph);
-      BF.images.load(ph, A.img('poster', item.imdb, 400), 2);
-      var bg = U.el('img', 'art ftile-bg'); t.appendChild(bg);
-      t.appendChild(U.el('div', 'ftile-scrim'));
-      var lg = U.el('div', 'ftile-logo'); t.appendChild(lg);
-      if (item.logo) {
-        var li = U.el('img', 'art'); lg.appendChild(li);
-        BF.images.load(li, A.img('logo', item.imdb, 500), 2, function () { lg.textContent = ''; lg.appendChild(U.txt('div', 'ftile-name', item.name)); });
-      } else lg.appendChild(U.txt('div', 'ftile-name', item.name));
-      var ch = U.el('div', 'ftile-chips');
-      BF.card.chips(item, 2).forEach(function (c) { ch.appendChild(U.txt('span', 'pill' + (c[1] ? ' pill--acc' : ''), c[0])); });
-      t.appendChild(ch);
-      if (isCont && item.play && item.play.pct > 0) { var pb = U.el('div', 'pbar'); var f = U.el('i'); f.style.width = Math.round(item.play.pct * 100) + '%'; pb.appendChild(f); t.appendChild(pb); }
-      t.appendChild(U.el('div', 'ring'));
-      t._bg = bg; t._imdb = item.imdb;
-      r._nodes[k] = t;
-      return t;
+    // every poster has its own fixed slot (index * step): focus only scales it up over its neighbours, nothing reflows;
+    // moving left/right slides the whole band (one composited transform)
+    function place(nd, on) {
+      if (nd._on === on && nd._px === nd._x) return;
+      nd._on = on; nd._px = nd._x;
+      nd.classList.toggle('foc', on);
+      nd.style.transform = 'translateX(' + nd._x + 'px)' + (on ? ' scale(' + G.focScale + ')' : '');
     }
     function renderRow(i, dir) {
       var row = rows[i], r = rowEl(i), band = r.children[1], focused = m.zone === 'rows' && m.row === i;
       var col = m.col[i] || 0, keep = {};
-      var idxs = RW.windowCols(col, row.items.length, focused);
-      var frag = [];
-      idxs.forEach(function (j, n) {
-        var it = row.items[j], node;
-        if (focused && n === 0) { node = tileNode(r, it, row.key === 'cont'); keep['t' + it.imdb] = 1; node.classList.add('foc'); }
-        else { node = posterNode(r, it); keep['p' + it.imdb] = 1; node.classList.remove('foc'); }
-        frag.push(node);
+      RW.windowCols(col, row.items.length).forEach(function (j) {
+        var it = row.items[j], nd = posterNode(r, it);
+        keep['p' + it.imdb] = 1;
+        nd._x = j * G.step;
+        nd.classList.toggle('gone', j < col);
+        place(nd, focused && !inRail && j === col);
+        if (nd.parentNode !== band) band.appendChild(nd);
       });
       // recycle: drop nodes outside the window (release their images)
       Object.keys(r._nodes).forEach(function (k) { if (!keep[k]) { BF.images.release(r._nodes[k]); if (r._nodes[k].parentNode) r._nodes[k].parentNode.removeChild(r._nodes[k]); delete r._nodes[k]; } });
-      var x = 0;
-      for (var n = 0; n < frag.length; n++) {
-        var nd = frag[n];
-        nd.style.transform = 'translateX(' + x + 'px)';
-        if (nd.parentNode !== band) band.appendChild(nd);
-        x += (focused && n === 0 ? G.tile : G.poster) + 16;
-      }
+      band.classList.toggle('anim', !!dir);
+      band.style.transform = 'translateX(' + (-col * G.step) + 'px)';
       r.classList.toggle('row--f', focused);
       r.classList.toggle('row--more', col > 0);
-      if (dir) { band.classList.remove('slide-l'); band.classList.remove('slide-r'); void band.offsetWidth; band.classList.add(dir === 'right' ? 'slide-r' : 'slide-l'); }
-      if (focused) {
-        var tn = r._nodes['t' + row.items[col].imdb];
-        clearTimeout(tileT);
-        tileT = setTimeout(function () { if (tn && tn.isConnected) BF.images.load(tn._bg, A.img('background', tn._imdb, 1280), 1); }, 380);
-        warmTrailer(row.items[col]);
-      }
+      if (focused) warmTrailer(row.items[col]);
     }
     var warmT = null;
     function warmTrailer(it) { clearTimeout(warmT); if (!it || it.trailer === null || it.trailer === false) return; warmT = setTimeout(function () { A.trailerPrefetch(it.imdb); }, 600); }
@@ -196,7 +171,7 @@
       clearTimeout(metaT);
       if (m.zone !== 'rows') { metaEl.style.opacity = 0; return; }
       var row = rows[m.row], it = row.items[m.col[m.row] || 0], L = RW.layout(m, rows.length);
-      metaEl.style.transform = 'translateY(' + (L.ys[m.row] + G.title + G.band + 16) + 'px)';
+      metaEl.style.transform = 'translateY(' + (L.ys[m.row] + G.title + G.band + 30) + 'px)';  // below the scaled-up poster + ring
       metaEl.style.opacity = 1;
       var l1 = metaEl.children[0], l2 = metaEl.children[1], ch = metaEl.children[2];
       ch.textContent = ''; l2.textContent = ''; l2.classList.remove('is-in');
@@ -261,8 +236,9 @@
         tilesEl.firstChild.style.transform = 'translateX(' + (-off) + 'px)';
       }
       Object.keys(rowEls).forEach(function (k) {
-        var r = rowEls[k]; var t = r.querySelector('.ftile');
-        if (t) t.classList.toggle('foc', !inRail && m.zone === 'rows' && +k === m.row);
+        var r = rowEls[k], row = rows[k]; if (!row) return;
+        var it = row.items[m.col[k] || 0], on = !inRail && m.zone === 'rows' && +k === m.row;
+        Object.keys(r._nodes).forEach(function (key) { var nd = r._nodes[key]; place(nd, on && it && key === 'p' + it.imdb); });
       });
     }
     function cur() { var row = rows[m.row]; return row ? row.items[m.col[m.row] || 0] : null; }

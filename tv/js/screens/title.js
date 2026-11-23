@@ -294,22 +294,20 @@
     meta.appendChild(u.txt('div', 'meta-l1', '')); meta.appendChild(u.txt('div', 'meta-l2', '')); meta.appendChild(u.el('div', 'meta-chips'));
     w.appendChild(band); w.appendChild(meta); el.appendChild(w);
     if (!items.length) { w.textContent = BF.t('title.nosimilar'); return { key: function (k) { return k === 'up' ? 'up' : k !== 'back'; } }; }
-    var tmT;
-    function render() {
-      BF.images.release(band); band.textContent = '';
-      var x = 0;
-      for (var j = col; j < Math.min(items.length, col + 5); j++) {
-        var it = items[j], node;
-        if (j === col) {
-          node = u.el('div', 'ftile foc');
-          var ph = u.el('img', 'art ftile-ph'); node.appendChild(ph); BF.images.load(ph, BF.api.img('poster', it.imdb, 400), 2);
-          var bg = u.el('img', 'art ftile-bg'); node.appendChild(bg); BF.images.load(bg, BF.api.img('background', it.imdb, 1280), 1);
-          node.appendChild(u.el('div', 'ftile-scrim')); var lg = u.el('div', 'ftile-logo'); lg.appendChild(u.txt('div', 'ftile-name', it.name)); node.appendChild(lg);
-          node.appendChild(u.el('div', 'ring'));
-        } else node = BF.card.poster(it);
-        node.style.transform = 'translateX(' + x + 'px)'; band.appendChild(node);
-        x += (j === col ? 800 : 300) + 16;
-      }
+    var tmT, nodes = {}, G = BF.rowwin.G;
+    // same as the Home rows: fixed slots, the focused poster scales up over its neighbours, the band slides
+    function render(dir) {
+      var keep = {};
+      BF.rowwin.windowCols(col, items.length).forEach(function (j) {
+        var nd = nodes[j] || (nodes[j] = BF.card.poster(items[j]));
+        keep[j] = 1;
+        nd.classList.toggle('foc', j === col); nd.classList.toggle('gone', j < col);
+        nd.style.transform = 'translateX(' + (j * G.step) + 'px)' + (j === col ? ' scale(' + G.focScale + ')' : '');
+        if (nd.parentNode !== band) band.appendChild(nd);
+      });
+      Object.keys(nodes).forEach(function (j) { if (!keep[j]) { BF.images.release(nodes[j]); if (nodes[j].parentNode) band.removeChild(nodes[j]); delete nodes[j]; } });
+      band.classList.toggle('anim', !!dir);
+      band.style.transform = 'translateX(' + (-col * G.step) + 'px)';
       var cur = items[col];
       meta.children[0].textContent = cur.name + '   ·   ' + BF.card.metaLine(cur);
       meta.children[1].textContent = ''; meta.children[2].textContent = '';
@@ -320,8 +318,8 @@
     return {
       key: function (k) {
         if (k === 'up') return 'up';
-        if (k === 'left' && col > 0) { col--; render(); }
-        else if (k === 'right' && col < items.length - 1) { col++; render(); }
+        if (k === 'left' && col > 0) { col--; render('left'); }
+        else if (k === 'right' && col < items.length - 1) { col++; render('right'); }
         else if (k === 'enter') BF.router.go('title', { imdb: items[col].imdb, card: items[col] });
         else if (k === 'back') return false;
         return true;

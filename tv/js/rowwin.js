@@ -1,7 +1,7 @@
 /* Home layout + virtualization math (pure, test/rowwin.test.js). Geometry from PLAN §10.3/§10.4. */
 (function (root) {
   'use strict';
-  var G = { firstTop: 990, title: 56, band: 450, meta: 186, margin: 40, focusTop: 120, poster: 300, step: 316, tile: 800 };
+  var G = { firstTop: 990, title: 56, band: 450, meta: 186, margin: 40, focusTop: 120, poster: 300, step: 316, focScale: 1.06 };
   G.rowH = G.title + G.band + G.margin;        // 546
   G.rowHF = G.rowH + G.meta;                   // 732
   function rowTop(i, focusedRow) {
@@ -23,10 +23,11 @@
     for (var i = Math.max(0, a); i <= Math.min(n - 1, b); i++) out.push(i);
     return out;
   }
-  function windowCols(col, n, focused) {
-    var end = Math.min(n, col + (focused ? 5 : 7));
+  // posters mounted in a row: the one that just slid out on the left (it fades), the focused one and 6 more
+  function windowCols(col, n) {
+    var end = Math.min(n, col + 7);
     var out = [];
-    for (var i = Math.max(0, col); i < end; i++) out.push(i);
+    for (var i = Math.max(0, col - 1); i < end; i++) out.push(i);
     return out;
   }
   // vertical move between zones/rows; returns a new model (does not mutate)
