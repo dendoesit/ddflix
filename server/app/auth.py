@@ -87,6 +87,20 @@ PUBLIC = ('/api/device/pair/start', '/api/device/pair/poll', '/api/device/ping',
 
 @web.middleware
 async def guard(request, handler):
+    """CORS headers on EVERY response, errors included: a 401 without them reaches the web app as a bare 'NetworkError'."""
+    try:
+        resp = await _guard(request, handler)
+    except web.HTTPException as e:
+        for k, v in cors_headers().items():
+            e.headers.setdefault(k, v)
+        raise
+    if not getattr(resp, 'prepared', False):
+        for k, v in cors_headers().items():
+            resp.headers.setdefault(k, v)
+    return resp
+
+
+async def _guard(request, handler):
     path = request.path
     if request.method == 'OPTIONS':
         return web.Response(status=204, headers=cors_headers())

@@ -21,6 +21,7 @@
     if (PROF && PROF.header) h['X-Profile'] = PROF.header;
     if (opt.body) h['Content-Type'] = 'application/json';
     return fetch(API + path, { method: opt.method || (opt.body ? 'POST' : 'GET'), headers: h, body: opt.body ? JSON.stringify(opt.body) : undefined })
+      .catch(function () { throw new Error('Serverul DDflix nu răspunde acum (Home Assistant pornit? internet?). Încearcă din nou în câteva secunde.'); })
       .then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (d) {
           if (r.status === 401 && path !== '/api/web/login') { logout(); throw new Error('Sesiune expirată'); }
