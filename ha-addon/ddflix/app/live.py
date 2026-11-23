@@ -110,9 +110,27 @@ async def tune(h, t):
         log.info('tune %s: %s', h[:8], config.mask(e)[:120])
 
 
+PLAY_CAP = 20 * 1024 * 1024  # while someone watches, torrents may not take the whole NIC (HA Green writes them to the NAS too)
+_cap = {'on': None}
+
+
+async def throttle():
+    from . import play
+    on = play.busy()
+    if on == _cap['on']:
+        return
+    try:
+        await _q(lambda q: q.call('POST', 'transfer/setDownloadLimit', data={'limit': str(PLAY_CAP if on else 0)}))
+        _cap['on'] = on
+        log.info('download limit %s', '%d MB/s (playing)' % (PLAY_CAP // 1048576) if on else 'off')
+    except Exception as e:
+        log.info('limit: %s', config.mask(e)[:120])
+
+
 async def job():
     """Every few seconds: offer episodes of running downloads as soon as their start is on disk; retire finished/cancelled ones."""
     schema()
+    await throttle()
     try:
         ts = await _q(lambda q: q.list())
     except Exception:
