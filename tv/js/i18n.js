@@ -20,7 +20,7 @@
     rowTitle: function (row) {
       var k = row.key || '';
       if (k.indexOf('chart:') === 0) return row.title;
-      if (k.indexOf('g:') === 0) return api.genre(k.slice(2));
+      if (k.indexOf('g:') === 0) return row.title && row.title !== k.slice(2) ? row.title : api.genre(k.slice(2));  // server title already localised (e.g. 'Seriale: Crimă')
       return has('row.' + k) ? t('row.' + k) : row.title;
     }
   };

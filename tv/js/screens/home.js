@@ -61,7 +61,7 @@
         sp.rest.forEach(function (row) {
           var k = row.key || '';
           if (k.indexOf('g:') === 0) tiles.push({ label: BF.i18n.genre(k.slice(2)), q: '?genre=' + encodeURIComponent(k.slice(2)) + '&sort=week' + (p.type ? '&type=' + p.type : '') });
-          else if (rows.length < 10) addRow(k, BF.i18n.rowTitle(row), row.items);
+          if (rows.length < 45) addRow(k, BF.i18n.rowTitle(row), row.items);  // genres: tile on top AND a full row
         });
         if (tiles.length < 3) ['Animation', 'Family', 'Comedy', 'Adventure', 'Action', 'Drama', 'Documentary', 'Fantasy'].forEach(function (g) {
           tiles.push({ label: BF.i18n.genre(g), q: '?genre=' + encodeURIComponent(g) + '&sort=week' + (p.type ? '&type=' + p.type : '') });

@@ -5,6 +5,7 @@ for (const k of ro) { const v = s => (s.match(/\{\w+\}/g) || []).sort().join(); 
 a.strictEqual(I.t('meta.left', { t: '6 min' }), 'Au rămas 6 min');
 a.strictEqual(I.badge('Can download'), 'Nu e încă pe server'); a.strictEqual(I.badge('Weird'), 'Weird');
 a.strictEqual(I.rowTitle({ key: 'g:Crime', title: 'Crime' }), 'Polițiste');
+a.strictEqual(I.rowTitle({ key: 'g:Crime', title: 'Seriale: Crimă' }), 'Seriale: Crimă');
 a.strictEqual(I.rowTitle({ key: 'chart:x', title: 'Top 10' }), 'Top 10');
 a.strictEqual(I.rowTitle({ key: 'zzz', title: 'Server' }), 'Server');
 I.setLang('en'); a.strictEqual(I.t('meta.left', { t: '6 min' }), '6 min left'); I.setLang('ro');
