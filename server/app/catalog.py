@@ -143,7 +143,28 @@ def lib_rows(profile, typ=None):
     return ts, agg
 
 
+_home_cache = {}
+
+
 async def home(request):
+    """Cached 2 min per profile + type (35 rows are slow to build on a small ARM box); rebuilt in the background."""
+    p = request['profile']
+    key = (p['id'] if p else None, request.query.get('type') or None, library_titles_key())
+    hit = _home_cache.get(key)
+    if hit and time.time() - hit[0] < 120:
+        return jok(hit[1])
+    out = await build_home(request)
+    _home_cache.clear() if len(_home_cache) > 50 else None
+    _home_cache[key] = (time.time(), out)
+    return jok(out)
+
+
+def library_titles_key():
+    library_titles()
+    return _lib['key']
+
+
+async def build_home(request):
     """Netflix-style home: your NAS library + Continue-able rows first, then what everyone is watching (Cinemeta / IMDb popularity)."""
     import asyncio
     p = request['profile']
@@ -206,7 +227,7 @@ async def home(request):
     if hero_ids:
         hr = {r['imdb']: r for r in db.q('SELECT * FROM title WHERE imdb IN (%s)' % ','.join('?' * len(hero_ids)), hero_ids)}
         hero_t += [hr[i] for i in hero_ids if i in hr and hr[i]['background_url'] and allowed(p, hr[i])][:6 - len(hero_t)]
-    return jok({'hero': [hero(t, agg.get(t['imdb'], {})) for t in hero_t], 'rows': rows})
+    return {'hero': [hero(t, agg.get(t['imdb'], {})) for t in hero_t], 'rows': rows}
 
 
 async def browse(request):
