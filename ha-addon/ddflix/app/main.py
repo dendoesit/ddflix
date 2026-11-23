@@ -2,10 +2,11 @@
 import asyncio
 import logging
 import os
+import time
 
 from aiohttp import web
 
-from . import admin, auth, catalog, config, db, discover, extra, filelist, library, markers, play, live, rss, subs
+from . import admin, auth, diag, catalog, config, db, discover, extra, filelist, library, markers, play, live, rss, subs
 
 log = logging.getLogger('main')
 STATIC = os.path.join(os.path.dirname(__file__), 'static')
@@ -21,10 +22,13 @@ async def index(request):
 async def every(name, fn, interval_s, first_s):
     await asyncio.sleep(first_s)
     while True:
+        t0 = time.time()
         try:
             await fn()
+            diag.job_done(name, t0)
         except Exception as e:  # one failing job never kills the loop
             log.warning('job %s: %s', name, config.mask(e))
+            diag.job_done(name, t0, e)
         await asyncio.sleep(interval_s)
 
 
@@ -87,6 +91,7 @@ def make_app():
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s %(message)s')
     logging.getLogger('aiohttp.access').setLevel(logging.WARNING)
+    diag.install()
     async def serve():
         runner = web.AppRunner(make_app(), access_log=None)
         await runner.setup()

@@ -15,6 +15,25 @@ os.makedirs(D, exist_ok=True)
 STATUS = os.path.join(D, 'status.json')
 URL_RE = re.compile(r'https://login\.tailscale\.com/\S+')
 UP = {'proc': None, 'url': '', 'out': ''}
+NET = {'at': 0, 'summary': {}}
+
+
+def netcheck():
+    """Every 10 min: what the network allows (UDP, IPv6, hard NAT) - decides direct connections vs the slow DERP relay."""
+    if time.time() - NET['at'] < 600:
+        return
+    NET['at'] = time.time()
+    rc, out = ts('netcheck', timeout=60)
+    s = {}
+    for line in out.splitlines():
+        k, _, v = line.strip().lstrip('*').strip().partition(':')
+        if k in ('UDP', 'IPv4', 'IPv6', 'MappingVariesByDestIP', 'PortMapping', 'Nearest DERP', 'CaptivePortal'):
+            v = v.strip()
+            if k in ('IPv4', 'IPv6') and v.startswith('yes'):
+                v = 'yes'  # the address itself stays out of logs
+            s[k] = v
+    NET['summary'] = s
+    log('netcheck ' + ', '.join('%s=%s' % kv for kv in s.items()))
 
 
 def log(msg):
@@ -73,7 +92,7 @@ def main():
     while True:
         if daemon is None or daemon.poll() is not None:
             log('starting tailscaled')
-            daemon = subprocess.Popen(['tailscaled', '--tun=userspace-networking', '--statedir=' + D, '--socket=' + SOCK],
+            daemon = subprocess.Popen(['tailscaled', '--tun=userspace-networking', '--port=41641', '--statedir=' + D, '--socket=' + SOCK],
                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(4)
         st = status()
@@ -95,7 +114,8 @@ def main():
                          backend=backend, detail=out[-300:])
                     time.sleep(15)
                     continue
-            save(state='running', url=url, backend=backend)
+            netcheck()
+            save(state='running', url=url, backend=backend, net=NET['summary'])
             time.sleep(30)
             continue
         if backend == 'NeedsMachineAuth':

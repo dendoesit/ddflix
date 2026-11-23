@@ -464,6 +464,96 @@
 
   // ---------- Settings: pair a TV, devices, profiles (PIN, kids age), my audio/subtitle languages, quality, storage
   var LANGS = [['rum', 'Română'], ['eng', 'Engleză'], ['fre', 'Franceză'], ['ger', 'Germană'], ['spa', 'Spaniolă'], ['ita', 'Italiană'], ['hun', 'Maghiară']];
+  // ---------- Diagnostic (admin web login only; the server answers 403 to TVs): refreshes every 5 s while open
+  function diagView() {
+    if (PROF && PROF.kind === 'kids') { app.innerHTML = '<p class="pad err">Nu e disponibil pe profilul de copii.</p>'; return; }
+    app.innerHTML = '<div class="ghead"><h1>Diagnostic</h1><span class="mut sm" id="dg-at"></span></div><div id="dg"><p class="pad mut">Se încarcă…</p></div>';
+    var box = app.querySelector('#dg'), t = null;
+    function B(b) { if (b == null) return '–'; var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0; while (b >= 1024 && i < 4) { b /= 1024; i++; } return (i ? b.toFixed(b < 10 ? 1 : 0) : b) + ' ' + u[i]; }
+    function S(b) { return b ? B(b) + '/s' : '0'; }
+    function ago(ts) { if (!ts) return '–'; var s = Math.max(0, Math.round(Date.now() / 1000 - ts)); return s < 60 ? s + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : s < 86400 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' zile'; }
+    function dur(s) { return s == null ? '–' : s < 3600 ? Math.round(s / 60) + ' min' : s < 86400 ? (s / 3600).toFixed(1) + ' h' : (s / 86400).toFixed(1) + ' zile'; }
+    function dot(ok) { return '<i class="dg-dot ' + (ok === true ? 'ok' : ok === false ? 'bad' : 'warn') + '"></i>'; }
+    function row(k, v, ok) { return '<div class="dg-r">' + (ok !== undefined ? dot(ok) : '') + '<span>' + esc(k) + '</span><b>' + v + '</b></div>'; }
+    function ep(x) { return esc(x.name || '?') + (x.season ? ' S' + x.season + 'E' + x.episode : ''); }
+    var KIND = { tv_error: 'Eroare redare', tv_unstick: 'Blocaj, repornit singur', tv_autoorig: 'Trecut pe original', tv_stall: 'Buffering lung' };
+    function paint(d) {
+      var h = d.host || {}, r = d.remote || {}, dl = d.downloads || {}, pb = d.playback || {}, lib = d.library || {}, f = r.funnel || {}, net = f.net || {};
+      var out = '';
+      // summary
+      var probs24 = (d.problems || []).filter(function (p) { return d.at - p.at < 86400; }).length;
+      var evs24 = (pb.events || []).filter(function (e) { return d.at - e.at < 86400; }).length;
+      out += '<section class="set"><h2>Pe scurt</h2>' +
+        row('Server', 'pornit de ' + dur(h.uptime) + (h.version ? ' · v' + esc(h.version) : ''), true) +
+        row('Acces din afară', r.direct ? 'direct (' + esc(r.direct.replace(/^https:\/\//, '')) + ')' : f.state === 'running' ? 'doar prin Funnel (lent)' : esc(f.state || '?'), r.direct ? true : f.state === 'running' ? null : false) +
+        row('Descărcări', dl.error ? 'qBittorrent nu răspunde' : S((dl.transfer || {}).dl_info_speed) + ' ↓ · ' + S((dl.transfer || {}).up_info_speed) + ' ↑', dl.error ? false : true) +
+        row('Redări acum', (pb.sessions || []).length ? (pb.sessions || []).length + ' active' : 'niciuna', true) +
+        row('Probleme 24 h', probs24 + ' în server · ' + evs24 + ' la redare', probs24 + evs24 ? (probs24 + evs24 > 5 ? false : null) : true) + '</section>';
+      // downloads
+      var tr = dl.transfer || {}, ts = dl.torrents || [];
+      out += '<section class="set"><h2>Descărcări</h2>' + (dl.error ? '<p class="err">' + esc(dl.error) + '</p>' :
+        row('Viteză', S(tr.dl_info_speed) + ' ↓ / ' + S(tr.up_info_speed) + ' ↑') +
+        row('Limită', tr.dl_rate_limit ? S(tr.dl_rate_limit) + ' (cineva se uită)' : 'fără') +
+        row('Conexiune', esc(tr.connection_status || '?') + ' · ' + (tr.dht_nodes || 0) + ' noduri DHT', tr.connection_status === 'connected' ? true : tr.connection_status === 'firewalled' ? null : false));
+      ts.slice(0, 12).forEach(function (x) {
+        var done = x.progress >= 1, pct = Math.floor((x.progress || 0) * 100);
+        out += '<div class="dg-t"><div class="dg-tn">' + esc(x.name) + '</div><div class="dg-bar"><i style="width:' + pct + '%"></i></div>' +
+          '<div class="mut sm">' + (done ? 'gata · ' + B(x.size) + ' · ratio ' + (x.ratio || 0).toFixed(2) + (x.upspeed ? ' · ↑ ' + S(x.upspeed) : '') :
+          pct + '% din ' + B(x.size) + ' · ↓ ' + S(x.dlspeed) + (x.eta && x.eta < 8640000 ? ' · mai are ' + dur(x.eta) : '') + ' · ' + (x.num_seeds || 0) + ' surse') + ' · ' + esc(x.state) + '</div></div>';
+      });
+      if ((dl.live || []).length) out += '<p class="mut sm">Se pot vedea deja în timp ce se descarcă: ' + dl.live.map(function (x) { return ep(x) + ' ' + (x.height || '') + 'p'; }).join(', ') + '</p>';
+      var rs = dl.rss || {};
+      out += row('FileList RSS', 'ultima verificare acum ' + ago(rs.lastRun) + (rs.lastError ? ' · eroare: ' + esc(rs.lastError) : ''), rs.lastError ? false : true) + '</section>';
+      // playback
+      out += '<section class="set"><h2>Redare</h2>' + row('Porniri în ultimele 24 h', String(pb.starts24h || 0));
+      (pb.sessions || []).forEach(function (s) { out += row((s.kind === 'web' ? 'Web · ' : 'TV · ') + s.mode, ep(s) + (s.height ? ' ' + s.height + 'p' : ''), true); });
+      if ((pb.events || []).length) {
+        out += '<h3 class="dg-h3">Probleme la redare (7 zile)</h3>';
+        pb.events.forEach(function (e) {
+          var det = {}; try { det = JSON.parse(e.detail || '{}'); } catch (x) { /* */ }
+          out += '<div class="dg-p"><span class="mut sm">acum ' + ago(e.at) + '</span> <b>' + esc(KIND[e.kind] || e.kind) + '</b> · ' + ep(e) +
+            (det.ms ? ' · ' + Math.round(det.ms / 1000) + ' s' : '') + (det.pos != null ? ' la ' + fmtT(det.pos) : '') + (det.code ? ' · ' + esc(det.code) : '') + (e.mode ? ' · ' + esc(e.mode) : '') + '</div>';
+        });
+      } else out += '<p class="mut sm">Nicio problemă la redare în ultimele 7 zile.</p>';
+      out += '</section>';
+      // remote access
+      out += '<section class="set"><h2>Acces din afara casei</h2>' +
+        row('Direct (rapid)', r.direct ? esc(r.direct) : 'nu e pornit', !!r.direct) +
+        row('Certificat', r.cert ? esc(r.cert.host) + ' · expiră ' + esc(r.cert.notAfter || '') : 'lipsește', !!r.cert) +
+        row('Funnel (rezervă)', esc(f.state || '?') + (f.url ? ' · ' + esc(f.url.replace(/^https:\/\//, '')) : ''), f.state === 'running') +
+        (net.UDP ? row('Tailscale: UDP / IPv6', esc(net.UDP) + ' / ' + esc(net.IPv6 || '?'), net.UDP === 'true' ? true : false) +
+          row('Tailscale: NAT greu', esc(net.MappingVariesByDestIP || '?') + ' (true = doar prin releu)', net.MappingVariesByDestIP === 'false' ? true : net.MappingVariesByDestIP === 'true' ? false : null) +
+          row('Tailscale: releu cel mai apropiat', esc(net['Nearest DERP'] || '?')) : '') + '</section>';
+      // server
+      var mem = h.memTotal ? Math.round((1 - h.memAvail / h.memTotal) * 100) : null, dm = (h.disks || {}).media;
+      out += '<section class="set"><h2>Server (HA Green)</h2>' +
+        row('Procesor', h.load ? h.load.map(function (x) { return x.toFixed(2); }).join(' / ') + ' (din ' + h.cpus + ' nuclee)' : '–', h.load ? h.load[1] < h.cpus : null) +
+        row('Memorie', mem != null ? mem + '% folosită din ' + B(h.memTotal) : '–', mem != null ? mem < 90 : null) +
+        row('Temperatură', h.tempC != null ? h.tempC + ' °C' : '–', h.tempC != null ? h.tempC < 75 : null) +
+        row('NAS', dm ? B(dm.free) + ' liber din ' + B(dm.total) : 'nu se vede', dm ? dm.free > 50 * 1073741824 : false) +
+        row('Bibliotecă', (lib.titles || 0) + ' titluri · ' + (lib.files || 0) + ' fișiere · ' + B(lib.bytes) + (lib.status && lib.status.scanning ? ' · scanează' : '')) +
+        (lib.subsPending ? row('Subtitrări în așteptare', String(lib.subsPending)) : '') + '</section>';
+      // jobs
+      var jobs = d.jobs || {}, jk = Object.keys(jobs).sort();
+      out += '<section class="set"><h2>Lucrări automate</h2>';
+      jk.forEach(function (k) { var j = jobs[k]; out += row(k, 'acum ' + ago(j.last) + ' · ' + (j.ms < 1000 ? j.ms + ' ms' : (j.ms / 1000).toFixed(0) + ' s') + (j.fails ? ' · ' + j.fails + ' eșuări' : ''), j.ok ? true : false) + (!j.ok && j.err ? '<p class="err sm dg-e">' + esc(j.err) + '</p>' : ''); });
+      if (!jk.length) out += '<p class="mut sm">Încă nu a rulat nimic de la pornire.</p>';
+      out += '</section>';
+      // problems
+      out += '<section class="set"><h2>Probleme recente în server</h2>';
+      (d.problems || []).slice(0, 40).forEach(function (p) { out += '<div class="dg-p"><span class="mut sm">acum ' + ago(p.at) + ' · ' + esc(p.src) + '</span> <span class="' + (p.level === 'ERROR' ? 'err' : '') + '">' + esc(p.msg) + '</span></div>'; });
+      if (!(d.problems || []).length) out += '<p class="mut sm">Nimic de la ultima pornire.</p>';
+      out += '</section><div style="height:40px"></div>';
+      box.innerHTML = out;
+      var at = app.querySelector('#dg-at'); if (at) at.textContent = 'actualizat ' + new Date(d.at * 1000).toLocaleTimeString('ro-RO');
+    }
+    function load() {
+      if (!/^#\/diag/.test(location.hash)) { clearTimeout(t); return; }
+      q('/api/admin/diag').then(function (d) { paint(d); }, function (e) { box.innerHTML = '<p class="pad err">' + esc(e.message) + '</p>'; })
+        .then(function () { clearTimeout(t); t = setTimeout(load, 5000); });
+    }
+    load();
+  }
   function settingsView(code) {
     LS.del('dd_paircode');
     if (PROF && PROF.kind === 'kids') { app.innerHTML = '<p class="pad err">Setările nu sunt disponibile pe profilul de copii.</p>'; return; }
@@ -475,7 +565,8 @@
       '<section class="set"><h2>Limbi pentru ' + esc(PROF ? PROF.name : '') + '</h2><p class="mut">Ordinea în care se aleg automat sunetul și subtitrarea.</p><div id="s-lang"></div></section>' +
       '<section class="set"><h2>Redare</h2><div id="s-play"></div></section>' +
       '<section class="set"><h2>Acces din afara casei</h2><div id="s-rem"></div></section>' +
-      '<section class="set"><h2>Server</h2><div id="s-srv" class="mut"></div></section>';
+      '<section class="set"><h2>Server</h2><div id="s-srv" class="mut"></div></section>' +
+      '<section class="set"><h2>Diagnostic</h2><p class="mut">Ce merge și ce nu: descărcări și viteze, redări, acces din afară, probleme recente.</p><a class="btn sec" href="#/diag">Deschide diagnosticul</a></section>';
     var f = app.querySelector('#s-pair form');
     if (code) { f.code.value = code.toUpperCase(); setTimeout(function () { app.querySelector('#s-pair').scrollIntoView({ block: 'start' }); f.name.focus(); }, 50); }
     f.onsubmit = function (e) {
@@ -791,6 +882,7 @@
     if (parts[0] === 'downloads') return downloads();
     if (parts[0] === 'mylist') return mylist();
     if (parts[0].split('?')[0] === 'library') return library((/type=(series|movie)/.exec(h) || [])[1] || '');
+    if (parts[0] === 'diag') return diagView();
     if (parts[0].split('?')[0] === 'settings' || parts[0].split('?')[0] === 'pair') return settingsView((/[?&]code=([A-Za-z0-9-]+)/.exec(h) || [])[1] || '');
     if (parts[0] === 'series' || parts[0] === 'movies') {
       var ty = parts[0] === 'series' ? 'series' : 'movie', rest = (parts[1] || '').split('?'), so = /sort=(\w+)/.exec(h);

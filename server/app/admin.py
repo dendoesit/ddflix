@@ -70,6 +70,12 @@ async def dashboard(request):
 
 
 @web_only
+async def diag_snapshot(request):
+    from . import diag
+    return jok(await diag.snapshot())
+
+
+@web_only
 async def status(request):
     return jok({'library': library.STATUS, 'rss': rss.STATUS,
                 'config': {'rssConfigured': bool(config.RSS_URL), 'rssMode': config.RSS_MODE, 'rssInterval': config.RSS_INTERVAL_MIN,
@@ -174,6 +180,7 @@ def routes(app):
     r.add_get('/api/where', where)
     r.add_get('/api/dashboard', dashboard)
     r.add_get('/api/admin/status', status)
+    r.add_get('/api/admin/diag', diag_snapshot)
     r.add_get('/api/admin/follows', follows_get)
     r.add_post('/api/admin/follows', follows_add)
     r.add_delete('/api/admin/follows/{id:\\d+}', follows_del)

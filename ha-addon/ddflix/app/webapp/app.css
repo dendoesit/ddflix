@@ -207,3 +207,12 @@ input.q{width:100%;font:500 18px var(--font);padding:14px 18px;border-radius:999
 .pnext .pn-b{display:flex;flex-wrap:wrap;gap:4px}
 #pnext-go{position:relative;overflow:hidden}#pnext-go .pn-f{position:absolute;left:0;top:0;bottom:0;width:0;background:#0000002e;transition:width .25s linear}#pnext-go span{position:relative}
 .pnext.pill #pnext-x{display:none}
+/* diagnostic page (phone first) */
+.dg-r{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:14px}
+.dg-r:first-of-type{border-top:0}.dg-r span{color:var(--mut);flex:0 0 auto;max-width:45%}
+.dg-r b{margin-left:auto;font-weight:600;text-align:right;word-break:break-word}
+.dg-dot{width:10px;height:10px;border-radius:50%;flex:0 0 10px;background:#f5b041}.dg-dot.ok{background:var(--ok)}.dg-dot.bad{background:#ff5a5f}
+.dg-t{padding:10px 0;border-top:1px solid var(--line)}.dg-tn{font-size:13px;font-weight:600;word-break:break-all;margin-bottom:6px}
+.dg-bar{height:6px;border-radius:3px;background:#ffffff1f;overflow:hidden;margin-bottom:5px}.dg-bar i{display:block;height:100%;background:var(--acc)}
+.dg-h3{margin:16px 0 4px;font:700 15px var(--font)}
+.dg-p{padding:8px 0;border-top:1px solid var(--line);font-size:13px;word-break:break-word}.dg-e{margin:0 0 8px}

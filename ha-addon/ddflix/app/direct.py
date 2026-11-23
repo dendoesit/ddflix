@@ -45,7 +45,7 @@ async def check(runner):
         return
     S['mtime'], S['host'] = mt, host_of(c)
     if not S['site']:
-        S['site'] = web.TCPSite(runner, '0.0.0.0', config.DIRECT_PORT, ssl_context=S['ctx'])
+        S['site'] = web.TCPSite(runner, None, config.DIRECT_PORT, ssl_context=S['ctx'])  # None = IPv4 + IPv6 (host network)
         await S['site'].start()
         log.info('direct HTTPS on :%d for %s', config.DIRECT_PORT, S['host'] or '?')
     else:
