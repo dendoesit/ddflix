@@ -32,15 +32,21 @@ def limited(bucket, key, n, window):
     return False
 
 
-def is_public(request):
+def local_port(request):
     try:
-        return request.transport.get_extra_info('sockname')[1] == config.PUBLIC_PORT
+        return request.transport.get_extra_info('sockname')[1]
     except Exception:
-        return True
+        return None
+
+
+def is_public(request):
+    """Funnel port or the direct HTTPS port: reachable from the internet, no IP trust."""
+    p = local_port(request)
+    return p is None or p in (config.PUBLIC_PORT, config.DIRECT_PORT)
 
 
 def peer_ip(request):
-    if is_public(request):  # behind Tailscale Funnel: the proxy APPENDS the real client to X-Forwarded-For (earlier values are client-supplied)
+    if local_port(request) == config.PUBLIC_PORT:  # behind Tailscale Funnel: the proxy APPENDS the real client to X-Forwarded-For (earlier values are client-supplied)
         xf = request.headers.get('X-Forwarded-For', '').split(',')[-1].strip()
         if xf:
             return xf

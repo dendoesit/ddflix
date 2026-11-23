@@ -93,6 +93,11 @@ if __name__ == '__main__':
         await web.TCPSite(runner, '0.0.0.0', config.PORT).start()          # LAN: TVs + admin page
         await web.TCPSite(runner, '0.0.0.0', config.PUBLIC_PORT).start()   # public (Funnel): token/password only
         log.info('DDflix on :%d (LAN) and :%d (public)', config.PORT, config.PUBLIC_PORT)
-        while True:
-            await asyncio.sleep(3600)
+        from . import direct
+        while True:  # direct HTTPS port: starts once the certificate exists, reloads it when renewed
+            try:
+                await direct.check(runner)
+            except Exception as e:
+                log.warning('direct: %s', e)
+            await asyncio.sleep(60)
     asyncio.run(serve())

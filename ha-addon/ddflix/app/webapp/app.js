@@ -8,15 +8,22 @@
   var qsApi = (location.search.match(/[?&]api=([^&]+)/) || [])[1];
   if (qsApi) { LS.set('dd_api', decodeURIComponent(qsApi)); history.replaceState(null, '', location.pathname + location.hash); }
   var SAME = /^\/web\//.test(location.pathname);
-  var API = SAME ? location.origin : (qsApi ? decodeURIComponent(qsApi) : window.DDFLIX_API || LS.get('dd_api') || '').replace(/\/$/, '');
-  // opened from the public site while at home: the public route (Tailscale Funnel) is slow, the home server is ~100x
-  // faster -> go to its own copy of this app (a top-level http navigation is allowed from https). ?stay=1 skips it.
+  // server addresses: DIRECT = the home server's own HTTPS port (router port forward, full speed; learned from /api/where),
+  // FUNNEL = Tailscale Funnel (always works, far too slow for video) -> only the fallback
+  var FUNNEL = (qsApi ? decodeURIComponent(qsApi) : window.DDFLIX_API || LS.get('dd_api') || '').replace(/\/$/, '');
+  var DIRECT = Date.now() - (+(LS.get('dd_direct_bad') || 0)) > 3600000 ? (LS.get('dd_direct') || window.DDFLIX_DIRECT || '') : '';
+  var API = SAME ? location.origin : (DIRECT || FUNNEL);
+  // at home -> the home server's own copy of this app (a top-level http navigation is allowed from https); away -> the
+  // direct address once the server reports one. ?stay=1 skips the check.
   if (!SAME && API && !/[?&]stay=1/.test(location.search) && window.fetch) {
     var wc = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    if (wc) setTimeout(function () { wc.abort(); }, 8000);
+    if (wc) setTimeout(function () { wc.abort(); }, API === DIRECT ? 8000 : 40000);
     fetch(API + '/api/where', { signal: wc ? wc.signal : undefined }).then(function (r) { return r.json(); }).then(function (d) {
-      if (d && d.home && /^http:\/\//.test(d.lan || '')) location.replace(d.lan + location.hash);
-    }).catch(function () { /* stay */ });
+      if (d && d.home && /^http:\/\//.test(d.lan || '')) { location.replace(d.lan + location.hash); return; }
+      if (d && /^https:\/\//.test(d.direct || '') && d.direct !== API && Date.now() - (+(LS.get('dd_direct_bad') || 0)) > 3600000) { LS.set('dd_direct', d.direct); LS.del('dd_direct_bad'); location.reload(); }
+    }).catch(function () {
+      if (API === DIRECT && DIRECT) { LS.set('dd_direct_bad', String(Date.now())); location.reload(); }  // direct port not reachable from here
+    });
   }
   var TOKEN = LS.get('dd_token') || '';
   var PROF = null;  // {id, name, kind, avatar, header}

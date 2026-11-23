@@ -60,7 +60,8 @@ async def where(request):
     if not home:
         ip = auth.peer_ip(request)
         home = any(same_place(ip, h) for h in await home_ips())
-    return jok({'home': home, 'lan': config.WEB_URL + '/web/'})
+    from . import direct
+    return jok({'home': home, 'lan': config.WEB_URL + '/web/', 'direct': direct.url()})
 
 
 async def dashboard(request):

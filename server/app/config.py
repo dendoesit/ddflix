@@ -59,6 +59,10 @@ if not FL_PASSKEY and 'passkey=' in RSS_URL:
 
 # Public listener (reached through the Tailscale Funnel): no IP trust at all, token or password login only.
 PUBLIC_PORT = env_int('PUBLIC_PORT', 8091)
+# Direct public listener (router port forward -> HTTPS with the Home Assistant certificate): same rules as the Funnel port.
+DIRECT_PORT = env_int('DIRECT_PORT', 8443)
+SSL_CERT = env('SSL_CERT', '/ssl/fullchain.pem')
+SSL_KEY = env('SSL_KEY', '/ssl/privkey.pem')
 WEB_PASSWORD = env('WEB_PASSWORD')
 WEB_ORIGINS = [o.strip().rstrip('/') for o in env('WEB_ORIGINS', '').split(',') if o.strip()]
 
