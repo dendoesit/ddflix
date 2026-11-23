@@ -108,6 +108,7 @@ async def guard(request, handler):
                 path.startswith('/api/settings') or path.startswith('/api/downloads')))):
             return jerr(403, 'not allowed from a device')
         raw = request.headers.get('X-Profile') or request.query.get('p') or ''
+        request['profile_explicit'] = bool(raw)
         if raw:
             pid, _, tk = raw.partition('.')
             try:
@@ -321,7 +322,7 @@ async def profile_select(request):
     if p['pin_hash']:
         if limited('pin', p['id'], 5, 60) or not pin_ok(p['pin_hash'], b.get('pin') or ''):
             return jerr(403, 'wrong PIN', needPin=True)
-    cur = request['profile']
+    cur = request['profile'] if request.get('profile_explicit') else None  # only when the client really is on the Kids profile
     if cur and cur['kind'] == 'kids' and p['kind'] != 'kids' and not p['pin_hash']:
         # leaving Kids for an adult profile without a PIN
         if not request['web']:

@@ -3,7 +3,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs'), path = require('path');
 const SER = process.env.TV || '192.168.1.20:26101', APP = 'DDflix0001.DDFLIX';
-const SDB = process.env.HOME + '/tizen-studio/tools/sdb';
+const SDB = process.env.SDB || (process.platform === 'win32' ? 'C:/tizen-studio/tools/sdb.exe' : process.env.HOME + '/tizen-studio/tools/sdb');
 const PF = path.join(__dirname, '..', '.cdp-port');
 const red = s => String(s).replace(/([?&](t|p|sig)=)[^&"'\s]+/g, '$1***').replace(/(Bearer )[A-Za-z0-9._-]+/g, '$1***');
 const KEYS = { left: 37, up: 38, right: 39, down: 40, enter: 13, ok: 13, back: 10009, play: 415, pause: 19, playpause: 10252, stop: 413, ff: 417, rw: 412, next: 10233, prev: 10232, red: 403, green: 404, yellow: 405, blue: 406, info: 457 };

@@ -7,7 +7,7 @@
     '<div class="bar3"><div style="display:flex;align-items:baseline"><div class="time" data-k="time">--:--</div><div class="greet" data-k="greet"></div></div><div class="alerts" data-k="alerts"></div><div class="brand">DDFLIX<small data-k="date"></small></div></div>' +
     '<div class="cols">' +
       '<div class="col" style="width:500px;margin-right:26px">' +
-        '<div class="card"><div class="lbl">Acasă · ' + esc(BF_CONFIG.home.name) + '</div><div data-k="wx"></div></div>' +
+        '<div class="card"><div class="lbl">Acasă · ' + BF.util.esc(BF_CONFIG.home.name) + '</div><div data-k="wx"></div></div>' +
         '<div class="card" data-k="air"></div>' +
         '<div class="card" style="flex:1;margin:0" data-k="tonight"></div>' +
       '</div>' +
@@ -172,7 +172,7 @@
       var sb = S.srv && S.srv.bnr, b = (sb && +sb.EUR) ? { EUR: +sb.EUR, USD: +sb.USD } : (S.bnr && +S.bnr.EUR ? { EUR: +S.bnr.EUR, USD: +S.bnr.USD } : {}), f = S.fuel || (S.srv && S.srv.fuel);
       set('money', '<div class="lbl">Curs BNR & carburanți</div>' + (f && b.EUR && !f.dummy ? '' : DEMO) + '<div class="two"><div>' +
         kv('<i class="cur">€</i>EUR', b.EUR ? b.EUR.toFixed(4) : '5.0912') + kv('<i class="cur">$</i>USD', b.USD ? b.USD.toFixed(4) : '4.6420') + '</div><div>' +
-        kv('⛽ Benzină', f ? f.gas.toFixed(2) : '7,49') + kv('⛽ Motorină', f ? f.diesel.toFixed(2) : '7,62') + (S.fuel ? '<div class="fsrc">min. ' + esc(BF_CONFIG.home.name) + ' · ' + esc(S.fuel.gasAt) + '</div>' : '') + '</div></div>');
+        kv('⛽ Benzină', f ? f.gas.toFixed(2) : '7,49') + kv('⛽ Motorină', f ? f.diesel.toFixed(2) : '7,62') + (S.fuel ? '<div class="fsrc">min. ' + BF.util.esc(BF_CONFIG.home.name) + ' · ' + esc(S.fuel.gasAt) + '</div>' : '') + '</div></div>');
     }
     function alerts() {
       var a = (S.srv && S.srv.alerts) || [];
@@ -185,7 +185,7 @@
       var rr = (d.traffic && d.traffic.routes) || [], live = 0;
       var rows = TR.map(function (x) { var r = rr.filter(function (q) { return x.k.test(q.to || ''); })[0]; if (r) live++; r = r || x; var m = r.min, hm = m >= 90 ? Math.floor(m / 60) + 'h ' + ('0' + m % 60).slice(-2) : m + ' min';
         return '<div class="trr"><span class="tri">' + x.ic + '</span><span class="trn">' + esc(x.to) + '</span><span class="trm">' + hm + '</span><span class="pill ' + (r.delay > 10 ? 'r' : r.delay > 3 ? 'y' : 'g') + '">' + (r.delay ? '+' + r.delay : 'fluent') + '</span></div>'; }).join('');
-      set('traffic', '<div class="lbl">Trafic · din ' + esc(BF_CONFIG.home.name) + '</div>' + (live && !d.traffic.dummy ? '' : DEMO) + rows);
+      set('traffic', '<div class="lbl">Trafic · din ' + BF.util.esc(BF_CONFIG.home.name) + '</div>' + (live && !d.traffic.dummy ? '' : DEMO) + rows);
       var sp = d.sport || [{ t: 'FCSB – Dinamo', when: 'Dum 20:30' }, { t: 'Real Madrid – Barcelona', res: '2 – 1' }];
       set('sport', '<div class="lbl">Sport</div>' + (d.sport ? '' : DEMO) + sp.slice(0, 3).map(function (m) { return kv(esc(m.t), m.res ? '<b>' + esc(m.res) + '</b>' : '<span class="pill r" style="margin:0">' + esc(m.when) + '</span>'); }).join(''));
       camShow(d.camera || null);

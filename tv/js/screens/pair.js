@@ -6,7 +6,9 @@
     var sec, U = BF.util, st = {}, pollT, cdT, alive = false, nav, newBtn;
     function model() { try { return root.webapis.productinfo.getRealModel(); } catch (e) { return ''; } }
     function render(d) {
-      var codeEl = U.qs('.pair-code', sec); U.empty(codeEl);
+      var codeEl = alive && sec ? U.qs('.pair-code', sec) : null;
+      if (!codeEl) return;  // screen already replaced (boot can open pair twice)
+      U.empty(codeEl);
       String(d.userCode).split('').forEach(function (c) { if (c !== '-') codeEl.appendChild(U.txt('span', 'pc', c)); });
       // the server knows its own address (WEB_URL in .env); fall back to webHost from config.js
       var url = d.verifyUrlComplete || ((/^https?:/.test(BF_CONFIG.webHost) ? '' : 'http://') + BF_CONFIG.webHost + '/#/pair?code=' + encodeURIComponent(d.userCode));
