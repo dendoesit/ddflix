@@ -236,6 +236,21 @@ async def follows(request):
     return jok({'items': [{'id': r['id'], 'name': r['pattern'], 'imdb': r['imdb']} for r in rows]})
 
 
+async def remote(request):
+    if not request['web'] or kids(request):
+        return jerr(403, 'web only')
+    import json
+    try:
+        with open(os.path.join(config.DATA_DIR, 'tailscale', 'status.json')) as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        st = {'state': 'off'}
+    from . import auth
+    if auth.is_public(request):  # links that log a device into the tailnet stay inside the home network
+        st = {'state': st.get('state'), 'url': st.get('url')}
+    return jok(st)
+
+
 async def stream_info(request):
     return jok({'streamBase': None})
 
@@ -285,6 +300,7 @@ def routes(app):
     r.add_get('/api/storage', storage)
     r.add_get('/api/follows', follows)
     r.add_get('/api/stream-info', stream_info)
+    r.add_get('/api/remote', remote)
     r.add_post('/api/downloads', downloads_add)
     r.add_post('/api/downloads/{id:[0-9a-f]{40}}/{action}', downloads_action)
     r.add_delete('/api/downloads/{id:[0-9a-f]{40}}', downloads_delete)

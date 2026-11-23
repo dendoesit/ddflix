@@ -446,6 +446,7 @@
       '<section class="set"><h2>Profiluri</h2><div id="s-prof" class="lst"></div><button class="btn sec" id="s-add">+ Adaugă profil</button></section>' +
       '<section class="set"><h2>Limbi pentru ' + esc(PROF ? PROF.name : '') + '</h2><p class="mut">Ordinea în care se aleg automat sunetul și subtitrarea.</p><div id="s-lang"></div></section>' +
       '<section class="set"><h2>Redare</h2><div id="s-play"></div></section>' +
+      '<section class="set"><h2>Acces din afara casei</h2><div id="s-rem"></div></section>' +
       '<section class="set"><h2>Server</h2><div id="s-srv" class="mut"></div></section>';
     var f = app.querySelector('#s-pair form');
     if (code) { f.code.value = code.toUpperCase(); setTimeout(function () { app.querySelector('#s-pair').scrollIntoView({ block: 'start' }); f.name.focus(); }, 50); }
@@ -537,7 +538,26 @@
           '<br>Trailere în cache: ' + esc(gb(st.trailers || 0) || '0 GB');
       }, function (e) { app.querySelector('#s-srv').textContent = e.message; });
     }
-    loadDev(); loadProf(); loadSrv();
+    function loadRem() {
+      var box = app.querySelector('#s-rem'); if (!box) return;
+      q('/api/remote').then(function (r) {
+        var h = '';
+        if (r.state === 'running' && r.url) {
+          h = '<p>✓ Merge de oriunde, cu parola ta: <a href="' + esc(r.url) + '/web/" target="_blank" rel="noopener"><b>' + esc(r.url) + '/web/</b></a></p>' +
+            '<p class="mut">Și https://ddflix.vercel.app folosește această adresă.</p>';
+        } else if (r.state === 'needs-login') {
+          h = '<p><b>Pasul 1 din 2:</b> conectează serverul la Tailscale (o singură dată, cu Google / Microsoft / GitHub).</p>' +
+            (r.loginUrl ? '<a class="btn red" target="_blank" rel="noopener" href="' + esc(r.loginUrl) + '">Conectează Tailscale</a>' : '<p class="mut">Se pregătește linkul…</p>');
+        } else if (r.state === 'needs-funnel') {
+          h = '<p><b>Pasul 2 din 2:</b> pornește adresa publică (Funnel) în contul Tailscale.</p><a class="btn red" target="_blank" rel="noopener" href="' + esc(r.enableUrl) + '">Activează Funnel</a>';
+        } else if (r.state === 'error') {
+          h = '<p class="err">Eroare: ' + esc(r.detail || '') + '</p>';
+        } else h = '<p class="mut">Pornește…</p>';
+        box.innerHTML = h;
+        if (r.state !== 'running' && location.hash.indexOf('#/settings') === 0) setTimeout(loadRem, 5000);
+      }, function (e) { box.innerHTML = '<p class="mut">' + esc(e.message) + '</p>'; });
+    }
+    loadDev(); loadProf(); loadSrv(); loadRem();
   }
 
   // ---------- player

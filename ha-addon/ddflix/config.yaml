@@ -1,5 +1,5 @@
 name: DDflix
-version: "1.10.1"
+version: "1.11.0"
 slug: ddflix
 description: Netflix local - seriale/filme de pe NAS, căutare + descărcare FileList, qBittorrent inclus
 url: https://github.com/dendoesit/ddflix
@@ -29,6 +29,7 @@ options:
   rss_mode: follow
   web_password: ""
   tmdb_key: ""
+  remote_access: true
   web_url: http://192.168.1.156:8090
   lan_cidr: 192.168.1.0/24
 schema:
@@ -39,5 +40,6 @@ schema:
   rss_mode: list(follow|all)
   web_password: password
   tmdb_key: password
+  remote_access: bool
   web_url: str
   lan_cidr: str

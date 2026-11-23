@@ -49,5 +49,8 @@ if not os.path.exists(conf):
 # separate supervisor process (survives the exec below; a thread would not)
 subprocess.Popen(['sh', '-c', 'while true; do qbittorrent-nox --profile=/data/qbt --webui-port=8080; sleep 5; done'],
                  env=env, stdin=subprocess.DEVNULL)
+# remote access (Tailscale Funnel) for the web app outside home; a separate supervised process
+if opts.get('remote_access', True):
+    subprocess.Popen(['python', '/remote.py'], env=env, stdin=subprocess.DEVNULL)
 os.chdir('/app')
 os.execvpe('python', ['python', '-m', 'app.main'], env)
