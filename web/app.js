@@ -8,7 +8,7 @@
   var qsApi = (location.search.match(/[?&]api=([^&]+)/) || [])[1];
   if (qsApi) { LS.set('dd_api', decodeURIComponent(qsApi)); history.replaceState(null, '', location.pathname + location.hash); }
   var SAME = /^\/web\//.test(location.pathname);
-  var API = SAME ? location.origin : (LS.get('dd_api') || window.DDFLIX_API || '').replace(/\/$/, '');
+  var API = SAME ? location.origin : (qsApi ? decodeURIComponent(qsApi) : window.DDFLIX_API || LS.get('dd_api') || '').replace(/\/$/, '');
   var TOKEN = LS.get('dd_token') || '';
   var PROF = null;  // {id, name, kind, avatar, header}
   try { PROF = JSON.parse(LS.get('dd_prof') || 'null'); } catch (e) { PROF = null; }

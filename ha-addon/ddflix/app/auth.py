@@ -40,8 +40,8 @@ def is_public(request):
 
 
 def peer_ip(request):
-    if is_public(request):  # behind Tailscale Funnel: the proxy sets X-Forwarded-For
-        xf = request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
+    if is_public(request):  # behind Tailscale Funnel: the proxy APPENDS the real client to X-Forwarded-For (earlier values are client-supplied)
+        xf = request.headers.get('X-Forwarded-For', '').split(',')[-1].strip()
         if xf:
             return xf
     return request.remote or ''
@@ -164,6 +164,15 @@ def cors_headers():
 
 
 # ---------------- web login (password from .env -> long-lived web token)
+_FAILS = []
+
+
+def _fails_public():
+    t = time.time()
+    _FAILS[:] = [x for x in _FAILS if t - x < 3600]
+    return len(_FAILS)
+
+
 async def web_login(request):
     ip = peer_ip(request)
     if limited('login', ip, 8, 900):
@@ -173,7 +182,11 @@ async def web_login(request):
         b = await request.json()
     except Exception:
         pass
+    if is_public(request) and _fails_public() >= 20:  # whole internet: 20 wrong passwords / hour -> remote login closed for 1 h
+        return jerr(429, 'Prea multe încercări greșite. Încearcă din nou peste o oră (din casă merge).')
     if not config.WEB_PASSWORD or not hmac.compare_digest(str(b.get('password') or '').encode(), config.WEB_PASSWORD.encode()):
+        if is_public(request):
+            _FAILS.append(time.time())
         return jerr(401, 'Parolă greșită')
     tok = secrets.token_urlsafe(32)
     did = db.x('INSERT INTO device(name, kind, token_hash, created_at, last_seen, last_ip, revoked) VALUES(?,?,?,?,?,?,0)',
