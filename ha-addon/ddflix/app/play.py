@@ -326,7 +326,7 @@ async def web_file(request):
     p = os.path.join(w.dir, fn)
     t0 = time.time()
     while not os.path.exists(p) or (fn == 'index.m3u8' and '#EXTINF' not in open(p, errors='ignore').read()):
-        if time.time() - t0 > 25 or (w.proc and w.proc.returncode not in (None, 0)):
+        if time.time() - t0 > (150 if w.f['live'] else 25) or (w.proc and w.proc.returncode not in (None, 0)):  # downloading: wait for it
             return jerr(504, 'stream starting')
         await asyncio.sleep(0.2)
     ct = 'application/vnd.apple.mpegurl' if fn.endswith('.m3u8') else 'video/mp4' if fn.endswith('.mp4') else 'video/iso.segment'
