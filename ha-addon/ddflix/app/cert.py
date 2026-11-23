@@ -92,7 +92,9 @@ async def enrich(ids):
     if not ids:
         return
     async with _lock:
-        rows = db.q('SELECT imdb, type FROM title WHERE imdb IN (%s) AND (cert_at IS NULL OR cert_at < ?)' % ','.join('?' * len(ids)),
+        from . import tmdb as _t
+        redo = " OR COALESCE(cert_src, '') NOT IN ('tmdb', 'tmdb-kids')" if _t.configured() else ''  # TMDB beats the keyless sources
+        rows = db.q('SELECT imdb, type FROM title WHERE imdb IN (%s) AND (cert_at IS NULL OR cert_at < ?%s)' % (','.join('?' * len(ids)), redo),
                     list(ids) + [db.now() - 30 * 86400])
         mv = [r['imdb'] for r in rows if r['type'] == 'movie' and r['imdb'].startswith('tt')]
         sr = [r['imdb'] for r in rows if r['type'] == 'series' and r['imdb'].startswith('tt')]
