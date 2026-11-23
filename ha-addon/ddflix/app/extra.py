@@ -171,7 +171,7 @@ async def trailer_warm():
 
 
 # ---------------- settings / storage / follows / stream-info
-DEFAULTS = {'quality': 'auto', 'lang': 'ro', 'downloads': True, 'dlQuality': '1080'}  # 4K files are ~3x bigger
+DEFAULTS = {'quality': 'auto', 'lang': 'ro', 'downloads': True, 'dlQuality': '4k'}  # watchable while downloading (live.py)
 
 
 def settings():
@@ -181,10 +181,10 @@ def settings():
         s.update(json.loads(db.get_setting('web_settings') or '{}'))
     except ValueError:
         pass
-    if not db.get_setting('dl1080_v2'):  # Dan, 2026-11-23: 4K is too big, back to 1080p (still changeable in Settings)
-        s['dlQuality'] = '1080'
+    if not db.get_setting('dl4k_v3'):  # Dan, 2026-11-23: 4K, watched while it downloads (still changeable in Settings)
+        s['dlQuality'] = '4k'
         db.set_setting('web_settings', json.dumps(s))
-        db.set_setting('dl1080_v2', '1')
+        db.set_setting('dl4k_v3', '1')
     return s
 
 

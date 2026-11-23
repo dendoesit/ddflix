@@ -43,6 +43,13 @@ def media_file(mid):
     return db.q1('SELECT * FROM media_file WHERE id=? AND missing=0', (mid,))
 
 
+def src(f):
+    """ffmpeg input: the file, or (still downloading) its live HTTP stream, which waits for missing pieces."""
+    if f['live'] and not os.path.exists(f['path']):
+        return 'http://127.0.0.1:%d/api/media/%d/file' % (config.PORT, f['id'])
+    return f['path']
+
+
 def prog_of(pid, mid):
     return db.q1('SELECT * FROM progress WHERE profile_id=? AND media_id=?', (pid, mid)) if pid else None
 
@@ -60,7 +67,7 @@ def media_out(f, pr):
           ('%d din %d min' % (pos // 60, max(1, dur // 60)) if pos > 30 and not watched else fmt_min(dur))
     return {'id': f['id'], 'season': f['season'], 'episode': f['episode'], 'duration': dur, 'res': '4K' if w >= 3000 else '%dp' % (f['height'] or 0),
             'hdr': f['hdr'], 'vcodec': f['vcodec'], 'size': f['size'], 'file': os.path.basename(f['path']), 'position': pos, 'watched': watched,
-            'progressLabel': lbl, 'timeLeft': ('%s rămase' % fmt_min(dur - pos)) if pos > 30 and dur else '', 'pct': round(pos / dur, 3) if dur else 0}
+            'progressLabel': lbl, 'downloading': bool(f['live']), 'timeLeft': ('%s rămase' % fmt_min(dur - pos)) if pos > 30 and dur else '', 'pct': round(pos / dur, 3) if dur else 0}
 
 
 def best_files(imdb, pid):
@@ -135,7 +142,7 @@ def sub_list(f):
         title = (tags.get('title') or '')
         lang = lang3(tags.get('language')) or 'und'
         text = s.get('codec_name') in TEXT_SUBS
-        if not text:
+        if not text or f['live']:  # image subs can't be drawn; embedded ones of a downloading file need the whole file
             continue  # image subs (PGS/VobSub) cannot be shown by the TV overlay
         out.append({'key': 'i%d' % s['index'], 'lang': lang, 'forced': bool(disp.get('forced')) or 'forced' in title.lower(),
                     'sdh': bool(disp.get('hearing_impaired')) or 'sdh' in title.lower(), 'text': True,
@@ -283,7 +290,7 @@ class WebSess:
     async def run(self):
         os.makedirs(self.dir, exist_ok=True)
         v = self.f['vcodec']
-        args = ['nice', '-n', '5', 'ffmpeg', '-nostdin', '-loglevel', 'error', '-ss', '%.3f' % self.start, '-i', self.f['path'],
+        args = ['nice', '-n', '5', 'ffmpeg', '-nostdin', '-loglevel', 'error', '-ss', '%.3f' % self.start, '-i', src(self.f),
                 '-map', '0:v:0', '-map', '0:a:%d?' % self.audio_n, '-sn', '-dn', '-c:v', 'copy']
         if v == 'hevc':
             args += ['-tag:v', 'hvc1']
@@ -361,7 +368,7 @@ async def play(request):
         return jok({'mode': 'direct', 'url': '/api/media/%d/file' % f['id'], 'start': start, 'offset': 0, 'duration': dur, 'plan': pl})
     if pl['mode'] == 'remux':
         segs = db.jl(f['kf'], None)
-        if not segs:
+        if not segs and not f['live']:
             asyncio.ensure_future(library.ensure_kf(f['id']))
             # no keyframe index yet: quick 1080p transcode this time (indexing runs in the background)
             pl = {'mode': 'transcode', 'video': 'h264', 'audio': 'aac', 'height': min(1080, f['height'] or 1080), 'audio_n': pl['audio_n'],
@@ -372,7 +379,7 @@ async def play(request):
         n = max(1, int(math.ceil(dur / SEG_T)))
         segs = [(i * SEG_T, min(dur, (i + 1) * SEG_T)) for i in range(n)]
     sid = secrets.token_hex(16)
-    SESS[sid] = {'mid': f['id'], 'path': f['path'], 'plan': pl, 'segs': segs, 'last': time.time(), 'dur': dur}
+    SESS[sid] = {'mid': f['id'], 'path': src(f), 'plan': pl, 'segs': segs, 'last': time.time(), 'dur': dur}
     gc_sessions()
     return jok({'mode': pl['mode'], 'sid': sid, 'url': '/s/%s/master.m3u8' % sid, 'offset': 0, 'vod': True, 'start': start,
                 'duration': dur, 'plan': pl, 'ttfs': 1.0})
@@ -643,6 +650,9 @@ async def media_file_resp(request):
     f = media_file(int(request.match_info['mid']))
     if not f or not allowed_imdb(request, f['imdb']):
         return jerr(404, 'media not found')
+    if f['live'] and not os.path.exists(f['path']):
+        from . import live
+        return await live.serve(request, f)
     ct = CT.get(os.path.splitext(f['path'])[1].lower(), 'application/octet-stream')
     return web.FileResponse(f['path'], headers={'Content-Type': ct, 'Cache-Control': 'private, max-age=3600'})
 

@@ -212,7 +212,8 @@ def _rank(item, fname, fps):
 async def candidates(s, f):
     typ, vid = ('series', '%s:%d:%d' % (f['imdb'], f['season'], f['episode'])) if f['season'] is not None else ('movie', f['imdb'])
     try:
-        hsh, size = await asyncio.get_running_loop().run_in_executor(None, os_hash, f['path'])
+        from . import live
+        hsh, size = await asyncio.get_running_loop().run_in_executor(None, os_hash, live.disk_path(f['path']))
         extra = '/videoHash=%s&videoSize=%d' % (hsh, size)
     except OSError:
         extra = ''
@@ -292,9 +293,11 @@ def have_langs(f):
 async def process(f, front=False):
     """Extract embedded tracks, then download the missing Romanian / English ones. Returns True when nothing is left to do."""
     schema()
-    if not f['imdb'] or not os.path.exists(f['path']):
+    from . import live
+    if not f['imdb'] or not os.path.exists(live.disk_path(f['path'])):
         return True
-    await extract_embedded(f)
+    if not f['live']:
+        await extract_embedded(f)
     missing = [l for l in WANT if l not in have_langs(f)]
     info = {}
     if missing and f['imdb'].startswith('tt') and (f['season'] is None or f['episode'] is not None):

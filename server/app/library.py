@@ -239,7 +239,7 @@ async def scan(force_meta=False):
 async def _scan(force_meta):
     paths = await asyncio.get_event_loop().run_in_executor(None, walk_media)
     seen = set()
-    known = {r['path']: r for r in db.q('SELECT id, path, mtime, imdb, missing FROM media_file')}
+    known = {r['path']: r for r in db.q('SELECT id, path, mtime, imdb, missing, live FROM media_file')}
     async with aiohttp.ClientSession() as session:
         for p in paths:
             try:
@@ -265,7 +265,7 @@ async def _scan(force_meta):
                 continue
             if k:
                 db.x('UPDATE media_file SET imdb=?, season=?, episode=?, duration=?, width=?, height=?, hdr=?, vcodec=?, size=?, mtime=?, '
-                     'missing=0, probe=?, ext_subs=?, kf=NULL, pname=?, pyear=?, ptype=? WHERE id=?',
+                     'missing=0, probe=?, ext_subs=?, kf=NULL, pname=?, pyear=?, ptype=?, live=NULL WHERE id=?',
                      (imdb, info['season'], info['episode'], s['duration'], s['width'], s['height'], s['hdr'], s['vcodec'], st.st_size,
                       st.st_mtime, json.dumps(pr), json.dumps(ext_subs(p)), info['name'], info['year'], info['type'], k['id']))
             else:
@@ -279,7 +279,7 @@ async def _scan(force_meta):
                       'WHERE m.missing=0 AND (t.imdb IS NULL OR t.meta_at IS NULL OR t.meta_at<?)', (db.now() - 3 * 86400,)):
             await ensure_title(session, r['imdb'], r['pname'], r['pyear'], r['ptype'])
     for path, k in known.items():
-        if path not in seen and not k['missing'] and not os.path.exists(path):
+        if path not in seen and not k['missing'] and not os.path.exists(path) and not k['live']:
             db.x('UPDATE media_file SET missing=1 WHERE id=?', (k['id'],))
     # refresh sidecar subtitle lists (cheap)
     for r in db.q('SELECT id, path FROM media_file WHERE missing=0'):
@@ -327,8 +327,8 @@ _kf_running = set()
 
 
 async def ensure_kf(mid):
-    r = db.q1('SELECT path, kf, duration FROM media_file WHERE id=?', (mid,))
-    if not r or r['kf'] or mid in _kf_running:
+    r = db.q1('SELECT path, kf, duration, live FROM media_file WHERE id=?', (mid,))
+    if not r or r['kf'] or r['live'] or mid in _kf_running:
         return
     _kf_running.add(mid)
     try:
@@ -343,7 +343,7 @@ async def ensure_kf(mid):
 
 async def kf_job():
     """Index a few files per run (newest first) so remux-with-seek is ready when needed."""
-    for r in db.q('SELECT id FROM media_file WHERE missing=0 AND kf IS NULL ORDER BY added_at DESC LIMIT 3'):
+    for r in db.q('SELECT id FROM media_file WHERE missing=0 AND kf IS NULL AND live IS NULL ORDER BY added_at DESC LIMIT 3'):
         await ensure_kf(r['id'])
 
 

@@ -1,0 +1,241 @@
+"""Watch while it downloads (like Stremio): a torrent that DDflix downloads is fetched in order (first + last pieces first),
+and as soon as the start of an episode is on disk it shows up in the library as playable. Its bytes are served straight from
+the growing file; a request for a part that is not downloaded yet waits for it. When the torrent completes, qBittorrent
+renames the file (drops '.!qB') and the library scan turns the row into a normal one (same id: watch progress is kept)."""
+import asyncio
+import json
+import logging
+import os
+import time
+
+import aiohttp
+from aiohttp import web
+
+from . import config, db, library, rss
+
+log = logging.getLogger('live')
+CHUNK = 512 * 1024
+HEAD_BYTES = 24 * 1024 * 1024   # the start that must be there before an episode is offered
+TAIL_BYTES = 4 * 1024 * 1024    # MKV cues / MP4 moov at the end (first+last piece priority fetches it early)
+WAIT_MAX = 120                  # a request waits this long for missing pieces, then ends (the player retries)
+_cache = {}                     # hash -> (time, info)
+_schema = {'ok': False}
+_tuned = set()
+
+
+def schema():
+    if _schema['ok']:
+        return
+    with db._lock:
+        c = db.conn()
+        cols = {r[1] for r in c.execute('PRAGMA table_info(media_file)')}
+        if 'live' not in cols:
+            c.execute('ALTER TABLE media_file ADD COLUMN live TEXT')
+    _schema['ok'] = True
+
+
+async def _q(fn):
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
+        return await fn(rss.Qbt(s))
+
+
+async def info(h, fresh=1.0):
+    """Torrent state, piece size, files (with their byte offset in the torrent) and piece states; cached ~1 s."""
+    hit = _cache.get(h)
+    if hit and time.time() - hit[0] < fresh:
+        return hit[1]
+
+    async def go(q):
+        ts = await q.call('GET', 'torrents/info', params={'hashes': h})
+        if not ts:
+            return None
+        props = await q.call('GET', 'torrents/properties', params={'hash': h})
+        files = await q.files(h)
+        states = await q.call('GET', 'torrents/pieceStates', params={'hash': h})
+        return {'t': ts[0], 'piece': props.get('piece_size') or 0, 'files': files, 'states': states or []}
+    try:
+        i = await _q(go)
+    except Exception as e:
+        log.info('qbt %s: %s', h[:8], config.mask(e)[:120])
+        i = hit[1] if hit else None
+    if i and i['piece']:
+        off = 0
+        for f in i['files']:
+            pr = f.get('piece_range') or [0, 0]
+            f['offset'] = off if off // i['piece'] == pr[0] else pr[0] * i['piece']  # pad files: start on a piece boundary
+            off = f['offset'] + f['size']
+    _cache[h] = (time.time(), i)
+    return i
+
+
+def have(i, f, a, b):
+    """True when bytes [a, b) of file f are downloaded."""
+    if not i or not i['piece'] or b <= a:
+        return bool(i) and b <= a
+    if (i['t'].get('progress') or 0) >= 1:
+        return True
+    p0, p1 = (f['offset'] + a) // i['piece'], (f['offset'] + b - 1) // i['piece']
+    st = i['states']
+    return p1 < len(st) and all(st[p] == 2 for p in range(p0, p1 + 1))
+
+
+def disk_path(path):
+    return path if os.path.exists(path) else path + '.!qB'
+
+
+def videos(i):
+    return [f for f in i['files'] if f.get('priority', 1) > 0 and f['name'].lower().endswith(library.VIDEO_EXT)
+            and 'sample' not in f['name'].lower()]
+
+
+def file_of(i, path):
+    sp = i['t'].get('save_path') or ''
+    return next((f for f in videos(i) if os.path.normpath(os.path.join(sp, f['name'])) == os.path.normpath(path)), None)
+
+
+async def tune(h, t):
+    """Download in order, first and last pieces first (once per torrent)."""
+    if h in _tuned:
+        return
+    try:
+        async def go(q):
+            if not t.get('seq_dl'):
+                await q.call('POST', 'torrents/toggleSequentialDownload', data={'hashes': h})
+            if not t.get('f_l_piece_prio'):
+                await q.call('POST', 'torrents/toggleFirstLastPiecePrio', data={'hashes': h})
+        await _q(go)
+        _tuned.add(h)
+        _cache.pop(h, None)
+    except Exception as e:
+        log.info('tune %s: %s', h[:8], config.mask(e)[:120])
+
+
+async def job():
+    """Every few seconds: offer episodes of running downloads as soon as their start is on disk; retire finished/cancelled ones."""
+    schema()
+    try:
+        ts = await _q(lambda q: q.list())
+    except Exception:
+        return
+    rows = {r['hash']: r for r in db.q('SELECT * FROM download')}
+    active = {}
+    for t in ts:
+        h, row = t.get('hash'), rows.get(t.get('hash'))
+        if not row or not row['imdb'] or (t.get('progress') or 0) >= 1 or t.get('state') in ('error', 'missingFiles'):
+            continue
+        active[h] = (t, row)
+    for r in db.q('SELECT id, live, path FROM media_file WHERE live IS NOT NULL'):
+        if r['live'] in active:
+            continue
+        if os.path.exists(r['path']):
+            db.x('UPDATE media_file SET live=NULL, mtime=0 WHERE id=?', (r['id'],))  # finished: the next scan re-probes it
+            asyncio.ensure_future(library.scan())
+        elif not os.path.exists(r['path'] + '.!qB'):
+            db.x('UPDATE media_file SET live=NULL, missing=1 WHERE id=?', (r['id'],))  # cancelled
+    for h, (t, row) in active.items():
+        try:
+            await offer(h, t, row)
+        except Exception as e:
+            log.warning('live %s: %s', h[:8], config.mask(e)[:150])
+
+
+async def offer(h, t, row):
+    await tune(h, t)
+    i = await info(h, 3)
+    if not i or not i['piece']:
+        return
+    sp = t.get('save_path') or i['t'].get('save_path') or ''
+    for f in videos(i):
+        final = os.path.normpath(os.path.join(sp, f['name']))
+        if db.q1('SELECT 1 FROM media_file WHERE path=?', (final,)):
+            continue
+        size = f['size']
+        if not (have(i, f, 0, min(HEAD_BYTES, size)) and have(i, f, max(0, size - TAIL_BYTES), size)):
+            continue
+        pr = await library.probe(disk_path(final))
+        if not pr:
+            continue
+        s = library.probe_summary(pr)
+        if not s['duration']:
+            continue
+        inf = library.parse(os.path.relpath(final, config.MEDIA_DIR))
+        season = inf['season'] if inf['season'] is not None else row['season']
+        episode = inf['episode'] if inf['episode'] is not None else row['episode']
+        db.set_setting('manual:' + final, row['imdb'])  # the scan keeps the title it was downloaded for
+        db.x('INSERT INTO media_file(path, imdb, season, episode, duration, width, height, hdr, vcodec, size, mtime, added_at, probe, '
+             'ext_subs, pname, pyear, ptype, live) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+             (final, row['imdb'], season, episode, s['duration'], s['width'], s['height'], s['hdr'], s['vcodec'], size, 0, db.now(),
+              json.dumps(pr), json.dumps(library.ext_subs(final)), inf['name'], inf['year'], inf['type'], h))
+        log.info('live %s S%sE%s %dp (%.0f%% downloaded)', row['imdb'], season, episode, s['height'] or 0, 100 * (t.get('progress') or 0))
+        from . import catalog
+        if hasattr(catalog, '_home_cache'):
+            catalog._home_cache.clear()
+
+
+def progress(h):
+    hit = _cache.get(h)
+    return (hit[1]['t'].get('progress') or 0) if hit and hit[1] else None
+
+
+async def serve(request, f):
+    """HTTP range response from the growing file; waits (up to WAIT_MAX s) for pieces that are not there yet."""
+    from . import play
+    h = f['live']
+    i = await info(h)
+    fi = file_of(i, f['path']) if i else None
+    if not fi:
+        return web.Response(status=404, text='not downloading')
+    size = fi['size']
+    try:
+        rng = request.http_range
+        start = rng.start if rng.start is not None else 0
+        stop = rng.stop
+    except ValueError:
+        start, stop = 0, None
+    if start < 0:
+        start = max(0, size + start)
+    end = min(size, stop if stop is not None else size)
+    if start >= size:
+        return web.Response(status=416, headers={'Content-Range': 'bytes */%d' % size})
+    ct = play.CT.get(os.path.splitext(f['path'])[1].lower(), 'application/octet-stream')
+    hdr = {'Content-Type': ct, 'Accept-Ranges': 'bytes', 'Content-Length': str(end - start), 'Cache-Control': 'no-store'}
+    partial = 'Range' in request.headers
+    if partial:
+        hdr['Content-Range'] = 'bytes %d-%d/%d' % (start, end - 1, size)
+    resp = web.StreamResponse(status=206 if partial else 200, headers=hdr)
+    await resp.prepare(request)
+    if request.method == 'HEAD':
+        return resp
+    loop = asyncio.get_running_loop()
+    pos, waited = start, 0.0
+
+    def read(p, a, n):
+        with open(p, 'rb') as fh:
+            fh.seek(a)
+            return fh.read(n)
+    while pos < end:
+        n = min(CHUNK, end - pos)
+        i = await info(h)
+        fi = file_of(i, f['path']) if i else fi
+        if not have(i, fi, pos, pos + n):
+            if waited >= WAIT_MAX:
+                break
+            await asyncio.sleep(1)
+            waited += 1
+            continue
+        waited = 0
+        try:
+            data = await loop.run_in_executor(None, read, disk_path(f['path']), pos, n)
+        except OSError:
+            await asyncio.sleep(1)
+            waited += 1
+            continue
+        if not data:
+            break
+        play.ACTIVE['at'] = time.time()
+        try:
+            await resp.write(data)
+        except (ConnectionResetError, asyncio.CancelledError):
+            raise
+        pos += len(data)
+    return resp
