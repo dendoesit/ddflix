@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import re
 import secrets
 import time
 
@@ -250,13 +251,44 @@ async def device_delete(request):
 
 
 # ---------------- profiles
+COLORS = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'teal']
+HEX = {'red': '#e50914', 'blue': '#2a7fff', 'green': '#2ecc71', 'yellow': '#f5c518', 'purple': '#9b59b6', 'orange': '#ff8a00',
+       'pink': '#ff4fa3', 'teal': '#17c3b2'}
+
+
+def color_of(p):
+    return p['avatar'] if p['avatar'] in HEX else COLORS[p['id'] % len(COLORS)]
+
+
+def free_color():
+    used = {color_of(p) for p in db.q('SELECT id, avatar FROM profile')}
+    free = [c for c in COLORS if c not in used] or COLORS
+    return secrets.choice(free)
+
+
+async def avatar_svg(request):
+    m = re.match(r'^(\d+)', request.match_info['name'])
+    p = profile_row(int(m.group(1))) if m else None
+    if not p:
+        return jerr(404, 'no avatar')
+    ch = (p['name'] or '?').strip()[:1].upper() or '?'
+    ch = ch.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="212" height="212" viewBox="0 0 212 212">'
+           '<rect width="212" height="212" rx="20" fill="%s"/>'
+           '<text x="106" y="142" font-family="Arial,Helvetica,sans-serif" font-size="110" font-weight="700" fill="#fff" '
+           'text-anchor="middle">%s</text>%s</svg>') % (HEX[color_of(p)], ch,
+           '<rect x="56" y="176" width="100" height="26" rx="6" fill="#fff"/><text x="106" y="196" font-family="Arial" font-size="18" '
+           'font-weight="700" text-anchor="middle" fill="#000">COPII</text>' if p['kind'] == 'kids' else '')
+    return web.Response(text=svg, content_type='image/svg+xml', headers={'Cache-Control': 'private, max-age=300'})
+
+
 def prof_out(p):
     prefs = db.jl(p['prefs'], {}) or {}
     prefs.setdefault('audio', ['rum', 'eng'])
     prefs.setdefault('subs', ['rum', 'eng'])
     prefs.setdefault('subStyle', {'size': 'm', 'color': 'white', 'bg': 'shadow'})
     return {'id': p['id'], 'name': p['name'], 'kind': p['kind'] or 'adult', 'maxRating': p['max_rating'],
-            'avatar': p['avatar'], 'avatarUrl': None, 'hasPin': bool(p['pin_hash']), 'admin': bool(p['admin']), 'prefs': prefs}
+            'avatar': color_of(p), 'avatarUrl': '/api/avatars/%d-%s-%s.svg' % (p['id'], color_of(p), p['kind'] or 'adult'), 'hasPin': bool(p['pin_hash']), 'admin': bool(p['admin']), 'prefs': prefs}
 
 
 async def profiles(request):
@@ -335,7 +367,7 @@ async def profile_create(request):
     b = await request.json()
     pid = db.x('INSERT INTO profile(name, kind, max_rating, avatar, admin, prefs) VALUES(?,?,?,?,0,?)',
                (str(b.get('name') or 'Profil')[:30], 'kids' if b.get('kind') == 'kids' else 'adult', b.get('maxRating') or None,
-                str(b.get('avatar') or 'red')[:12], json.dumps({'audio': ['rum', 'eng'], 'subs': ['rum', 'eng']})))
+                free_color(), json.dumps({'audio': ['rum', 'eng'], 'subs': ['rum', 'eng']})))
     return jok({'ok': True, 'profile': prof_out(profile_row(pid))})
 
 
@@ -393,6 +425,7 @@ def routes(app):
     r.add_get('/api/devices', devices)
     r.add_delete('/api/devices/{id:\\d+}', device_delete)
     r.add_get('/api/profiles', profiles)
+    r.add_get('/api/avatars/{name}.svg', avatar_svg)
     r.add_post('/api/profiles', profile_create)
     r.add_post('/api/profiles/{id:\\d+}/select', profile_select)
     r.add_put('/api/profiles/{id:\\d+}/prefs', profile_prefs)

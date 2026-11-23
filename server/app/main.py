@@ -53,6 +53,8 @@ async def stop_jobs(app):
 
 def make_app():
     db.conn()
+    from . import cert
+    cert.schema()
     app = web.Application(middlewares=[auth.guard], client_max_size=2 * 1024 * 1024)
     auth.routes(app)
     catalog.routes(app)

@@ -231,7 +231,7 @@
       var rest = [];
       (r[0].rows || []).forEach(function (x) {
         if ((x.key || '').indexOf('g:') === 0) addTile(x.title.replace(/^(Seriale|Filme): /, ''), pageLink(x.link));
-        else rest.push(x);
+        rest.push(x);  // genres are tiles AND rows on the web
       });
       if (tiles.children.length) app.appendChild(tiles);
       var keep = function (items) { return type ? (items || []).filter(function (c) { return c.type === type; }) : items; };

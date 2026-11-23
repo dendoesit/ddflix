@@ -105,29 +105,66 @@ def home_rows(typ=None):
         rows = [rows[0], rows[3], rows[1], rows[4], rows[2], rows[5]]
         tops = [tops[0], tops[2], tops[1], tops[3]]
     rows = tops + rows
-    gs = {None: [('series', 'Crime'), ('movie', 'Action'), ('series', 'Sci-Fi'), ('movie', 'Comedy'), ('series', 'Drama'),
-                 ('movie', 'Horror'), ('series', 'Animation'), ('series', 'Documentary')],
-          'series': [('series', g) for g in ('Crime', 'Drama', 'Sci-Fi', 'Comedy', 'Action', 'Fantasy', 'Mystery', 'Animation',
-                                             'Documentary', 'Reality-TV')],
-          'movie': [('movie', g) for g in ('Action', 'Comedy', 'Thriller', 'Sci-Fi', 'Horror', 'Drama', 'Animation', 'Romance', 'Crime',
-                                           'Documentary')]}[typ]
+    gs = {None: [('series', 'Crime'), ('movie', 'Action'), ('series', 'Drama'), ('movie', 'Comedy'), ('series', 'Sci-Fi'),
+                 ('movie', 'Thriller'), ('series', 'Comedy'), ('movie', 'Horror'), ('series', 'Fantasy'), ('movie', 'Sci-Fi'),
+                 ('series', 'Mystery'), ('movie', 'Adventure'), ('series', 'Animation'), ('movie', 'Animation'), ('series', 'Documentary'),
+                 ('movie', 'Romance'), ('series', 'Reality-TV'), ('movie', 'Crime'), ('series', 'Action'), ('movie', 'Drama'),
+                 ('movie', 'War'), ('series', 'History')],
+          'series': [('series', g) for g in ('Crime', 'Drama', 'Sci-Fi', 'Comedy', 'Action', 'Fantasy', 'Mystery', 'Thriller', 'Animation',
+                                             'Adventure', 'Documentary', 'Reality-TV', 'Romance', 'History', 'War', 'Family', 'Horror')],
+          'movie': [('movie', g) for g in ('Action', 'Comedy', 'Thriller', 'Sci-Fi', 'Horror', 'Drama', 'Adventure', 'Animation', 'Romance',
+                                           'Crime', 'Fantasy', 'Mystery', 'Documentary', 'Family', 'War', 'History', 'Biography')]}[typ]
+    seen = set()
     for t, g in gs:
         label = GENRE_RO.get(g, g) if typ else ('Seriale' if t == 'series' else 'Filme') + ': ' + GENRE_RO.get(g, g)
-        rows.append(('g:' + g, label, 'genre', t, g))  # TV turns 'g:<Genre>' rows into genre tiles
+        key = 'g:' + g if g not in seen else 'gx:%s:%s' % (t, g)  # TV turns 'g:<Genre>' rows into genre tiles
+        seen.add(g)
+        rows.append((key, label, 'genre', t, g))
     return rows
 
 
 def kids_rows(typ=None):
+    S, M = typ in (None, 'series'), typ in (None, 'movie')
     rows = []
-    for t in ('series', 'movie'):
+    if S:
+        rows.append(('kids_top_series', 'Top 10 seriale pentru copii', 'kidstop', 'series', None))
+    if M:
+        rows.append(('kids_top_movie', 'Top 10 filme pentru copii', 'kidstop', 'movie', None))
+    if S:
+        rows.append(('kids_anim_series', 'Desene animate', 'kids', 'series', 'Animation'))
+    if M:
+        rows.append(('kids_anim_movie', 'Filme de animație', 'kids', 'movie', 'Animation'))
+    if S:
+        rows.append(('kids_new_series', 'Desene și seriale noi', 'kidsnew', 'series', None))
+    if M:
+        rows.append(('kids_new_movie', 'Filme noi pentru copii', 'kidsnew', 'movie', None))
+    if S:
+        rows.append(('kids_fam_series', 'Seriale pentru toată familia', 'kids', 'series', 'Family'))
+    if M:
+        rows += [('kids_fam_movie', 'Filme pentru toată familia', 'kids', 'movie', 'Family'),
+                 ('kids_best_movie', 'Cele mai iubite filme', 'kidsbest', 'movie', None)]
+    for t, g, label in (('movie', 'Adventure', 'Filme de aventură'), ('series', 'Adventure', 'Aventuri'), ('movie', 'Comedy', 'Filme de comedie'),
+                        ('movie', 'Fantasy', 'Basme și fantasy'), ('series', 'Comedy', 'Seriale amuzante'), ('movie', 'Musical', 'Muzicale'),
+                        ('series', 'Documentary', 'Documentare despre natură și lume')):
         if typ in (None, t):
-            rows += [('kids_fam_' + t, ('Seriale' if t == 'series' else 'Filme') + ' pentru copii', 'kids', t, 'Family'),
-                     ('kids_anim_' + t, 'Desene animate' if t == 'series' else 'Filme de animație', 'kids', t, 'Animation'),
-                     ('kids_adv_' + t, ('Seriale' if t == 'series' else 'Filme') + ' de aventură', 'kids', t, 'Adventure'),
-                     ('kids_com_' + t, ('Seriale' if t == 'series' else 'Filme') + ' de comedie', 'kids', t, 'Comedy')]
-    if typ is None:
-        rows = [rows[0], rows[4], rows[1], rows[5], rows[2], rows[6], rows[3], rows[7]]
+            rows.append(('kids_%s_%s' % (g.lower(), t), label, 'kids', t, g))
     return rows
+
+
+async def kids_pool(typ, session=None):
+    """Popular animation + family titles (6 pages each), interleaved in popularity order."""
+    lists = []
+    for g in ('Animation', 'Family'):
+        ids = []
+        for skip in (0, 50, 100, 150, 200, 250):
+            ids += [i for i in await catalog(typ, 'top', g, skip, session) if i not in ids]
+        lists.append(ids)
+    out = []
+    for k in range(max(len(x) for x in lists)):
+        for x in lists:
+            if k < len(x) and x[k] not in out:
+                out.append(x[k])
+    return out
 
 
 async def pool(typ, session=None):
@@ -145,9 +182,18 @@ async def row_ids(kind, typ, genre=None, session=None):
         return await catalog(typ, 'top', genre, 0, session)
     if kind == 'kids':  # several pages: the kids filter drops a lot
         out = []
-        for skip in (0, 50, 100, 150):
+        for skip in (0, 50, 100, 150, 200, 250):
             out += [i for i in await catalog(typ, 'top', genre, skip, session) if i not in out]
         return out
+    if kind == 'kidstop':
+        return await kids_pool(typ, session)
+    if kind in ('kidsnew', 'kidsbest'):
+        ids = await kids_pool(typ, session)
+        meta = {r['imdb']: r for r in db.q('SELECT imdb, year, imdb_rating FROM title WHERE imdb IN (%s)' % ','.join('?' * len(ids)), ids)} if ids else {}
+        if kind == 'kidsnew':
+            y = time.localtime().tm_year - 1
+            return [i for i in ids if i in meta and (meta[i]['year'] or 0) >= y]
+        return sorted([i for i in ids if i in meta and (meta[i]['imdb_rating'] or 0) >= 7.3], key=lambda i: -meta[i]['imdb_rating'])
     if kind == 'nfx':
         return top_ids('nfx', typ)['ids']
     if kind == 'imdb10':
@@ -173,12 +219,21 @@ async def warm():
         seen = set()
         for typ in (None, 'series', 'movie'):
             for _, _, kind, t, g in home_rows(typ) + kids_rows(typ):
-                key = (kind == 'kids', t, g) if kind in ('genre', 'kids') else (False, t, None)
+                key = (kind, t, g)
                 if key in seen:
                     continue
                 seen.add(key)
                 await row_ids(kind, t, g, s)
                 await asyncio.sleep(0.3)
+    from . import cert
+    ids = []
+    for typ in ('series', 'movie'):
+        ids += await kids_pool(typ)
+        for g in ('Adventure', 'Comedy', 'Fantasy', 'Musical', 'Documentary'):
+            ids += await row_ids('kids', typ, g)
+        ids += (await pool(typ))[:100] + top_ids('nfx', typ)['ids']
+    ids += [r['imdb'] for r in db.q("SELECT DISTINCT imdb FROM media_file WHERE missing=0 AND imdb LIKE 'tt%'")]
+    await cert.enrich(list(dict.fromkeys(ids)))
 
 
 # ---------------- IMDb ratings (datasets.imdbws.com, personal non-commercial use)

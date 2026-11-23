@@ -45,16 +45,21 @@ KIDS_BAD = {'Horror', 'Crime', 'Thriller', 'War', 'Mystery', 'Romance', 'Film-No
 
 
 def allowed(profile, t):
-    """Kids profiles see only family titles (IMDb genre 'Family'), never anything tagged Horror / Crime / Thriller / War...;
-    max age 7 or less = family animation only."""
+    """Kids profiles: never anything tagged Horror / Crime / Thriller / War...; titles with a known age rating (Wikidata FSK/MPA
+    for movies, TVmaze 'Children' for series) must be <= the profile's max age; unknown ratings fall back to the IMDb
+    'Family' genre (and animation only for 7 and under)."""
     if not profile or profile['kind'] != 'kids':
         return True
     g = set(db.jl(t['genres'], []) or [])
-    if 'Family' not in g or g & KIDS_BAD:
+    if g & KIDS_BAD:
         return False
-    if (profile['max_rating'] or 12) <= 7 and 'Animation' not in g:
+    mx = profile['max_rating'] or 12
+    age = t['cert_age'] if 'cert_age' in t.keys() else None
+    if age is not None:
+        return age <= mx
+    if 'Family' not in g:
         return False
-    return True
+    return mx > 7 or 'Animation' in g
 
 
 def card(t, a, prog=None):
@@ -67,7 +72,7 @@ def card(t, a, prog=None):
             'poster': real, 'backdrop': real, 'logo': real and bool(t['logo_url']), 'labels': labels, 'has4k': w >= 3000,
             'dv': hdr == 'dovi', 'hdr': bool(hdr), 'atmos': False, 'ro': a.get('ro', False), 'rosub': a.get('rosub', False), 'fl': False,
             'new': bool(a.get('added')) and time.time() - a['added'] < 72 * 3600, 'newVersion': False,
-            'downloading': False, 'progress': prog, 'certAge': None, 'trailer': None, 'inLibrary': bool(a.get('n'))}
+            'downloading': False, 'progress': prog, 'certAge': t['cert_age'] if 'cert_age' in t.keys() else None, 'trailer': None, 'inLibrary': bool(a.get('n'))}
     out['inPlex'] = out['inLibrary']  # TV: 'playable here'
     b = badge(t, a)
     if b:
@@ -113,6 +118,10 @@ def cards_for(profile, imdbs, agg=None):
     return [card(rows[i], agg.get(i)) for i in imdbs if i in rows and allowed(profile, rows[i])]
 
 
+def progress_cols():
+    return {r[1] for r in db.q('PRAGMA table_info(progress)')}
+
+
 def lib_rows(profile, typ=None):
     agg = library_titles()
     if not agg:
@@ -147,17 +156,40 @@ async def home(request):
     hero_ids = []
     for (key, title_, kind, t, g), ids in zip(specs, results):
         cs = cards_for(p, ids, agg)
-        if kind in ('nfx', 'imdb10'):
+        if kind == 'kidstop':
+            cs = cs[:10]
+        if kind in ('nfx', 'imdb10', 'kidstop'):
             for i, c in enumerate(cs):
                 c['rank'] = i + 1
             if kind == 'nfx':
                 wk = discover.week_label(discover.top_ids('nfx', t)['week'])
                 title_ = title_ + (' · ' + wk if wk else '')
         if len(cs) >= 4:
-            link = '' if kind in ('nfx', 'imdb10') else '#/browse?type=%s' % t + ('&genre=' + g if g else '&sort=' + ('score' if kind == 'best' else 'newest' if kind == 'new' else 'popular'))
+            link = '' if kind in ('nfx', 'imdb10', 'kidstop') else '#/browse?type=%s' % t + ('&genre=' + g if g else '&sort=' + ('score' if kind == 'best' else 'newest' if kind == 'new' else 'popular'))
             rows.append({'key': key, 'title': title_, 'items': cs[:40], 'link': link})
         if kind == 'pop':
             hero_ids += ids[:8]
+    if p and not kids:
+        recent = db.q('SELECT DISTINCT m.imdb FROM progress pr JOIN media_file m ON m.id=pr.media_id WHERE pr.profile_id=? '
+                      'ORDER BY pr.updated_at DESC LIMIT 6', (p['id'],)) if 'updated_at' in progress_cols() else []
+        done = 0
+        for r in recent:
+            src = db.q1('SELECT * FROM title WHERE imdb=?', (r['imdb'],))
+            if not src or (typ and src['type'] != typ) or done >= 2:
+                continue
+            gs = [x for x in (db.jl(src['genres'], []) or []) if x in discover.GENRES.get(src['type'], [])]
+            if not gs:
+                continue
+            cand = []
+            for g in gs[:2]:
+                cand += await discover.catalog(src['type'], 'top', g, 0)
+            want = set(gs)
+            rows_ = {x['imdb']: x for x in db.q('SELECT * FROM title WHERE imdb IN (%s)' % ','.join('?' * len(cand)), cand)} if cand else {}
+            pick = [i for i in dict.fromkeys(cand) if i != src['imdb'] and i in rows_ and len(want & set(db.jl(rows_[i]['genres'], []) or [])) >= min(2, len(want))]
+            cs = cards_for(p, pick, agg)
+            if len(cs) >= 4:
+                rows.insert(min(len(rows), 6 + done), {'key': 'because:' + src['imdb'], 'title': 'Pentru că te-ai uitat la ' + src['name'], 'items': cs[:30], 'link': ''})
+                done += 1
     hero_t = [t for t in by_added if t['imdb'].startswith('tt') and t['background_url']][:2]
     if hero_ids:
         hr = {r['imdb']: r for r in db.q('SELECT * FROM title WHERE imdb IN (%s)' % ','.join('?' * len(hero_ids)), hero_ids)}
