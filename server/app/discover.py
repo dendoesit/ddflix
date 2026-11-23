@@ -1,6 +1,7 @@
 """Netflix-style discovery (keyless): Cinemeta catalogs (popular / new / top rated, per genre) and IMDb ratings
 (official IMDb datasets, refreshed daily: series/movie score + per-episode score)."""
 import asyncio
+import contextvars
 import csv
 import gzip
 import json
@@ -54,12 +55,35 @@ def upsert(m, typ):
     return imdb
 
 
-async def catalog(typ, cat='top', genre=None, skip=0, session=None):
-    """-> [imdb] for a Cinemeta catalog page (cached 6 h, also in the DB so a restart / offline still shows rows)."""
+_refreshing = set()
+_FRESH = contextvars.ContextVar('ddflix_fresh', default=False)  # True inside the warm job: really refetch
+
+
+async def catalog(typ, cat='top', genre=None, skip=0, session=None, fresh=False):
+    """-> [imdb] for a Cinemeta catalog page (cached 6 h, also in the DB). Pages never wait for the network when an older
+    copy exists: they get it at once and the refresh runs in the background (stale-while-revalidate)."""
     key = 'disc:%s:%s:%s:%d' % (typ, cat, genre or '', skip)
+    fresh = fresh or _FRESH.get()
     hit = _mem.get(key)
-    if hit and time.time() - hit[0] < TTL:
+    if hit and time.time() - hit[0] < TTL and not fresh:
         return hit[1]
+    if not fresh:
+        old = hit[1] if hit else None
+        if old is None:
+            v = db.get_setting(key)
+            old = json.loads(v) if v else None
+        if old:
+            _mem[key] = (hit[0] if hit else 0, old)
+            if key not in _refreshing:
+                _refreshing.add(key)
+
+                async def bg():
+                    try:
+                        await catalog(typ, cat, genre, skip, None, True)
+                    finally:
+                        _refreshing.discard(key)
+                asyncio.ensure_future(bg())
+            return old
     extra = []
     if genre:
         extra.append('genre=' + quote(genre, safe=''))
@@ -236,9 +260,8 @@ async def row_ids(kind, typ, genre=None, session=None):
 
 async def warm():
     """Background job: refresh every home catalog so /api/home answers from cache."""
+    _FRESH.set(True)
     async with _lock, aiohttp.ClientSession() as s:
-        for k in list(_mem):
-            _mem[k] = (0, _mem[k][1])
         seen = set()
         for typ in (None, 'series', 'movie'):
             for _, _, kind, t, g in home_rows(typ) + kids_rows(typ):
