@@ -110,7 +110,7 @@
 .tile{display:inline-block;width:236px;height:108px;margin-right:16px;border-radius:14px;background:linear-gradient(180deg,#3a3a42,#26262c);border:1px solid #ffffff1f;font:800 26px/30px var(--font);letter-spacing:1px;text-transform:uppercase;text-align:center;padding:0 12px;white-space:normal;vertical-align:top;display:inline-flex;align-items:center;justify-content:center;transition:transform var(--t-fast) var(--ease)}
 .tile.foc{background:#fff;color:#0b0b0d;transform:scale(1.05)}
 .rows{position:absolute;left:0;top:0;width:1920px}
-.row{position:absolute;left:0;top:0;width:1920px;height:546px}
+.row{position:absolute;left:0;top:0;width:1920px;height:546px;will-change:transform}
 .row-t{position:absolute;left:128px;top:0;font:700 34px/56px var(--font);white-space:nowrap}
 .row-band{position:absolute;left:128px;top:56px;height:450px;width:1792px}
 .row--more .row-t:before{content:'‹';position:absolute;left:-56px;top:0;color:var(--text-3);font-size:40px}
@@ -133,7 +133,7 @@
 .ftile-chips{position:absolute;right:24px;bottom:28px;white-space:nowrap}
 .ftile .pbar{left:0;right:0;bottom:0;border-radius:0 0 14px 14px;overflow:hidden}
 .ftile .ring{left:-9px;top:-9px;right:-9px;bottom:-9px;border-radius:22px}
-.meta{position:absolute;left:148px;top:0;width:1150px;height:170px;transition:opacity 150ms}
+.meta{position:absolute;left:148px;top:0;width:1150px;height:170px;transition:opacity 150ms;will-change:opacity}
 .meta-l1{font:700 26px/36px var(--font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 .meta-l2{font:400 28px/38px var(--font);color:var(--text-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;opacity:0;transition:opacity 150ms;margin-top:6px}
 .meta-l2.is-in{opacity:1}

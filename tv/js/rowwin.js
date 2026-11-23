@@ -18,7 +18,7 @@
   }
   function visibleRows(model, n) {
     var a, b;
-    if (model.zone === 'rows') { a = model.row - 1; b = model.row + 1; } else { a = 0; b = 1; }
+    if (model.zone === 'rows') { a = model.row - 1; b = model.row + 2; } else { a = 0; b = 1; }
     var out = [];
     for (var i = Math.max(0, a); i <= Math.min(n - 1, b); i++) out.push(i);
     return out;

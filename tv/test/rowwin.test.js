@@ -5,7 +5,7 @@ L = R.layout({ zone: 'rows', row: 2 }, 5);
 a.strictEqual(L.ys[2] - L.Y, 120, 'focused row title at y 120');
 a.strictEqual(L.ys[3] - L.ys[2], 732, 'focused row is taller');
 a.strictEqual(L.ys[3] - L.Y, 852, 'next row title at 852');
-a.deepStrictEqual(R.visibleRows({ zone: 'rows', row: 0 }, 5), [0, 1]);
+a.deepStrictEqual(R.visibleRows({ zone: 'rows', row: 0 }, 5), [0, 1, 2]);
 a.deepStrictEqual(R.visibleRows({ zone: 'rows', row: 4 }, 5), [3, 4]);
 a.deepStrictEqual(R.visibleRows({ zone: 'hero' }, 5), [0, 1]);
 a.deepStrictEqual(R.windowCols(0, 30, true), [0, 1, 2, 3, 4]);

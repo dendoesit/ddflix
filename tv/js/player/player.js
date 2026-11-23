@@ -379,7 +379,7 @@
   // ---------------- progress / ping / lifecycle
   function saveProgress(credits) {
     var st = P.st; if (!st || !st.started || !st.m) return Promise.resolve();
-    var b = { mediaId: st.m.id, position: Math.floor(st.pos), duration: st.duration || st.m.duration, audio: st.audio, sub: st.sub || null };
+    var b = { mediaId: st.m.id, position: Math.floor(st.pos), duration: st.duration || st.m.duration, audio: st.audio, sub: st.sub || null, subManual: !!st.subManual };
     if (credits) b.credits = true;
     return A.progress(b).catch(function () {});
   }

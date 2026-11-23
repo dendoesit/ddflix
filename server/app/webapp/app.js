@@ -617,7 +617,7 @@
     ps.innerHTML = '<option value="">Fără subtitrare</option>' + (st.m.subs || []).map(function (s) { return '<option value="' + esc(s.key) + '"' + (s.key === st.sub ? ' selected' : '') + '>' + esc(s.label) + '</option>'; }).join('');
     ps.value = st.sub || '';
   }
-  function saveSub() { var st = P.st; if (st) q('/api/progress', { body: { mediaId: st.mid, position: curPos(), duration: st.m.duration, sub: st.sub || '', audio: st.audio } }).catch(function () {}); }
+  function saveSub() { var st = P.st; if (st) q('/api/progress', { body: { mediaId: st.mid, position: curPos(), duration: st.m.duration, sub: st.sub || '', subManual: true, audio: st.audio } }).catch(function () {}); }
   function watchSubs(st) {
     // the server is still preparing / downloading subtitles (Romanian, English): refresh the list, switch to the preferred one
     var n = 0;
@@ -745,11 +745,11 @@
   document.getElementById('pnext-go').onclick = playNext;
   document.getElementById('pnext-x').onclick = function () { if (P.st) P.st.nextDismissed = true; nextC.hidden = true; };
   setInterval(function () {
-    if (P.st && !P.el.hidden && !P.v.paused) q('/api/progress', { body: { mediaId: P.st.mid, position: curPos(), duration: P.st.m.duration, sub: P.st.sub || null, audio: P.st.audio } }).catch(function () {});
+    if (P.st && !P.el.hidden && !P.v.paused) q('/api/progress', { body: { mediaId: P.st.mid, position: curPos(), duration: P.st.m.duration, sub: P.st.sub || null, subManual: !!P.st.manual, audio: P.st.audio } }).catch(function () {});
   }, 10000);
   document.getElementById('pclose').onclick = function () {
     var st = P.st; if (!st) return;
-    q('/api/progress', { body: { mediaId: st.mid, position: curPos(), duration: st.m.duration, sub: st.sub || null } }).catch(function () {});
+    q('/api/progress', { body: { mediaId: st.mid, position: curPos(), duration: st.m.duration, sub: st.sub || null, subManual: !!st.manual } }).catch(function () {});
     if (st.sid) q('/api/play/' + st.sid, { method: 'DELETE' }).catch(function () {});
     if (P.hls) { P.hls.destroy(); P.hls = null; }
     P.v.pause(); P.v.removeAttribute('src'); P.v.load(); P.el.hidden = true; P.st = null; skipB.hidden = true; nextC.hidden = true; thumb.hidden = true; route();

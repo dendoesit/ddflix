@@ -36,6 +36,9 @@ def schema():
         return
     db.x('CREATE TABLE IF NOT EXISTS sub_state(media_id INTEGER PRIMARY KEY, mtime REAL, done_at INTEGER, next_at INTEGER, '
          'tries INTEGER DEFAULT 0, info TEXT)')
+    if not db.get_setting('subs_manual_v1'):
+        db.x('UPDATE progress SET sub_key=NULL')  # earlier builds saved the automatic pick too: forget those once
+        db.set_setting('subs_manual_v1', '1')
     _schema['ok'] = True
 
 

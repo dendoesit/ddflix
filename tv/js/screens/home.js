@@ -182,7 +182,7 @@
       if (focused) {
         var tn = r._nodes['t' + row.items[col].imdb];
         clearTimeout(tileT);
-        tileT = setTimeout(function () { if (tn && tn.isConnected) BF.images.load(tn._bg, A.img('background', tn._imdb, 1280), 1); }, 180);
+        tileT = setTimeout(function () { if (tn && tn.isConnected) BF.images.load(tn._bg, A.img('background', tn._imdb, 1280), 1); }, 380);
         warmTrailer(row.items[col]);
       }
     }
@@ -228,11 +228,17 @@
       }, 400);
     }
     // ---------- layout / focus
-    var mounted = {};
-    function layout(dir) {
+    var mounted = {}, layRaf = 0;
+    var metaDT = null;
+    function layout(dir, vert) {
       var L = RW.layout(m, rows.length), vis = RW.visibleRows(m, rows.length), want = {};
       vis.forEach(function (i) { want[i] = 1; });
-      Object.keys(mounted).forEach(function (i) { if (!want[i]) { unmountRow(+i); delete mounted[i]; } });
+      var keepA = m.zone === 'rows' ? m.row - 3 : -1, keepB = m.zone === 'rows' ? m.row + 3 : 2;
+      Object.keys(mounted).forEach(function (i) {
+        if (want[i]) return;
+        if (+i >= keepA && +i <= keepB) { rowEl(+i).style.transform = 'translateY(' + L.ys[+i] + 'px)'; if (+i === m.prevRow) renderRow(+i, null); return; }
+        unmountRow(+i); delete mounted[i];
+      });
       vis.forEach(function (i) {
         var r = rowEl(i); r.style.transform = 'translateY(' + L.ys[i] + 'px)';
         if (!mounted[i] || i === m.row || i === m.prevRow) renderRow(i, i === m.row ? dir : null);
@@ -241,7 +247,10 @@
       m.prevRow = m.zone === 'rows' ? m.row : -1;
       scroll.style.transform = 'translateY(' + (-L.Y) + 'px)';
       sec.classList.toggle('scrolled', L.Y > 0);
-      paintFocus(); paintMeta();
+      paintFocus();
+      // vertical moves: the info under the row appears once the scroll settles (text layout mid-animation stutters on the TV)
+      clearTimeout(metaDT);
+      if (vert) { clearTimeout(metaT); metaEl.style.opacity = 0; metaDT = setTimeout(paintMeta, 270); } else paintMeta();
     }
     function paintFocus() {
       heroBtns.forEach(function (b, i) { b.classList.toggle('foc', !inRail && m.zone === 'hero' && heroBtn === i); });
@@ -355,7 +364,7 @@
         }, 300000);
       },
       onHide: function () { clearTimeout(heroT); clearInterval(perT); },
-      unmount: function () { clearTimeout(heroT); clearTimeout(metaT); clearTimeout(tileT); clearInterval(perT); },
+      unmount: function () { clearTimeout(heroT); clearTimeout(metaT); clearTimeout(metaDT); clearTimeout(tileT); clearInterval(perT); },
       saveState: function () { return { zone: m.zone, row: m.row, col: m.col.slice() }; },
       refresh: function (why) { if (why) softRefresh(why); else refreshCont(); },
       onKey: function (k) {
@@ -366,7 +375,9 @@
           var nm = RW.vmove(m, k, rows.length, !!tiles.length && !flat);
           if (flat && nm.zone !== 'rows') return true;
           if (!hero.length && nm.zone === 'hero') nm.zone = tiles.length ? 'tiles' : 'rows';
-          nm.col = m.col; nm.prevRow = m.prevRow; m = nm; layout(); return true;
+          nm.col = m.col; nm.prevRow = m.prevRow; m = nm;
+          if (!layRaf) layRaf = requestAnimationFrame(function () { layRaf = 0; layout(null, true); });
+          return true;
         }
         if (k === 'left' || k === 'right') {
           if (m.zone === 'hero') {

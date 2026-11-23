@@ -732,7 +732,7 @@ async def progress(request):
     if pos < 30 and not b.get('watched'):
         watched = False
     sub_key = old['sub_key'] if old else None
-    if 'sub' in b:
+    if 'sub' in b and b.get('subManual'):
         sub_key = b['sub'] or ''
     audio_n = b.get('audio') if b.get('audio') is not None else (old['audio_n'] if old else None)
     db.x('INSERT INTO progress(profile_id, media_id, position, duration, watched, audio_n, sub_key, updated_at) VALUES(?,?,?,?,?,?,?,?) '
