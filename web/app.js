@@ -578,11 +578,12 @@
     q('/api/media/' + mid).then(function (m) {
       var st = P.st = { m: m, mid: mid, name: name, offset: 0, sid: null, audio: audio != null ? audio : (m.defaultAudio || 0), sub: m.defaultSub };
       document.getElementById('ptitle').textContent = name + (m.season != null ? ' · S' + m.season + ' E' + m.episode : '');
-      var pa = document.getElementById('paudio'), ps = document.getElementById('psub');
+      var pa = document.getElementById('paudio');
       pa.innerHTML = (m.audio || []).map(function (a) { return '<option value="' + a.n + '"' + (a.n === st.audio ? ' selected' : '') + '>' + esc(a.label) + '</option>'; }).join('');
-      ps.innerHTML = '<option value="">Fără subtitrare</option>' + (m.subs || []).map(function (s) { return '<option value="' + esc(s.key) + '"' + (s.key === st.sub ? ' selected' : '') + '>' + esc(s.label) + '</option>'; }).join('');
+      subMenu();
       pa.onchange = function () { start_(curPos(), +pa.value); };
-      ps.onchange = function () { st.sub = ps.value || null; loadSub(); };
+      document.getElementById('psub').onchange = function () { st.sub = this.value || null; st.manual = true; loadSub(true); saveSub(); };
+      if (m.subsPending) watchSubs(st);
       document.getElementById('pdur').textContent = fmtT(m.duration);
       P.el.hidden = false;
       start_(start != null ? start : (m.position > 30 && !m.watched ? m.position - 3 : 0), st.audio);
@@ -608,17 +609,63 @@
       loadSub();
     }, function (e) { toast(e.message); });
   }
-  function loadSub() {
-    var v = P.v, st = P.st;
+  // ---- subtitles: the menu, loading with clear feedback (every switch says what happened), new ones arriving while you watch
+  var SUBGEN = 0;
+  function subLabel(k) { var s = ((P.st && P.st.m.subs) || []).filter(function (x) { return x.key === k; })[0]; return s ? s.label : 'subtitrare'; }
+  function subMenu() {
+    var st = P.st, ps = document.getElementById('psub');
+    ps.innerHTML = '<option value="">Fără subtitrare</option>' + (st.m.subs || []).map(function (s) { return '<option value="' + esc(s.key) + '"' + (s.key === st.sub ? ' selected' : '') + '>' + esc(s.label) + '</option>'; }).join('');
+    ps.value = st.sub || '';
+  }
+  function saveSub() { var st = P.st; if (st) q('/api/progress', { body: { mediaId: st.mid, position: curPos(), duration: st.m.duration, sub: st.sub || '', audio: st.audio } }).catch(function () {}); }
+  function watchSubs(st) {
+    // the server is still preparing / downloading subtitles (Romanian, English): refresh the list, switch to the preferred one
+    var n = 0;
+    (function tick() {
+      if (P.st !== st || P.el.hidden || ++n > 40) return;
+      setTimeout(function () {
+        if (P.st !== st || P.el.hidden) return;
+        q('/api/media/' + st.mid).then(function (m) {
+          var had = {}; (st.m.subs || []).forEach(function (s) { had[s.key] = 1; });
+          var fresh = (m.subs || []).filter(function (s) { return !had[s.key]; });
+          st.m.subs = m.subs || [];
+          if (fresh.length) {
+            if (!st.manual && m.prefSub && m.prefSub !== st.sub) { st.sub = m.prefSub; subMenu(); loadSub(true); }
+            else { subMenu(); toast('Subtitrare nouă disponibilă: ' + fresh.map(function (s) { return s.label; }).join(', ')); }
+          }
+          if (m.subsPending) tick();
+        }, function () { tick(); });
+      }, 6000);
+    })();
+  }
+  function loadSub(announce) {
+    var v = P.v, st = P.st, gen = ++SUBGEN, key = st.sub, tries = 0;
+    clearTimeout(st.subT);
     [].slice.call(v.querySelectorAll('track')).forEach(function (t) { t.parentNode.removeChild(t); });
-    if (!st.sub) return;
-    fetch(authUrl('/api/media/' + st.mid + '/sub/' + st.sub + '.vtt')).then(function (r) { return r.text(); }).then(function (txt) {
-      if (/^WEBVTT\s*$/.test(txt.trim())) { setTimeout(loadSub, 8000); return; }
-      var off = st.offset;
-      txt = txt.replace(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})/g, function (_, h, m, s, ms) { var t = Math.max(0, +h * 3600 + +m * 60 + +s + ms / 1000 - off); var H = Math.floor(t / 3600), M = Math.floor(t / 60) % 60, S = t % 60; return (H < 10 ? '0' : '') + H + ':' + (M < 10 ? '0' : '') + M + ':' + (S < 10 ? '0' : '') + S.toFixed(3); });
-      var tr = document.createElement('track'); tr.kind = 'subtitles'; tr.default = true; tr.src = URL.createObjectURL(new Blob([txt], { type: 'text/vtt' }));
-      v.appendChild(tr); setTimeout(function () { if (v.textTracks[0]) v.textTracks[0].mode = 'showing'; }, 50);
-    });
+    for (var i = 0; i < v.textTracks.length; i++) v.textTracks[i].mode = 'disabled';
+    if (!key) { if (announce) toast('Subtitrare oprită'); return; }
+    (function go() {
+      fetch(authUrl('/api/media/' + st.mid + '/sub/' + key + '.vtt')).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      }).then(function (txt) {
+        if (gen !== SUBGEN || P.st !== st) return;
+        if (/^WEBVTT\s*$/.test(txt.trim())) {
+          if (announce && !tries) toast('Se pregătește subtitrarea ' + subLabel(key) + '…');
+          if (++tries < 60) st.subT = setTimeout(go, 3000); else toast('Subtitrarea ' + subLabel(key) + ' nu s-a putut pregăti');
+          return;
+        }
+        showSub(st, txt);
+        if (announce || tries) toast('Subtitrare: ' + subLabel(key));
+      }).catch(function () { if (gen === SUBGEN && P.st === st) toast('Subtitrarea ' + subLabel(key) + ' nu s-a putut încărca'); });
+    })();
+  }
+  function showSub(st, txt) {
+    var v = P.v;
+    var off = st.offset;
+    txt = txt.replace(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})/g, function (_, h, m, s, ms) { var t = Math.max(0, +h * 3600 + +m * 60 + +s + ms / 1000 - off); var H = Math.floor(t / 3600), M = Math.floor(t / 60) % 60, S = t % 60; return (H < 10 ? '0' : '') + H + ':' + (M < 10 ? '0' : '') + M + ':' + (S < 10 ? '0' : '') + S.toFixed(3); });
+    var tr = document.createElement('track'); tr.kind = 'subtitles'; tr.default = true; tr.src = URL.createObjectURL(new Blob([txt], { type: 'text/vtt' }));
+    v.appendChild(tr); tr.track.mode = 'showing'; setTimeout(function () { if (tr.parentNode) tr.track.mode = 'showing'; }, 50);
   }
   var scrub = document.getElementById('pscrub'), dragging = false, SMAX = 1000;
   function seekTo(t) { var st = P.st; if (!st) return; if (st.sid) start_(t, st.audio); else P.v.currentTime = t; }

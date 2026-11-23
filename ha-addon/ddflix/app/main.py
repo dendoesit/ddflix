@@ -5,7 +5,7 @@ import os
 
 from aiohttp import web
 
-from . import admin, auth, catalog, config, db, discover, extra, filelist, library, markers, play, rss
+from . import admin, auth, catalog, config, db, discover, extra, filelist, library, markers, play, rss, subs
 
 log = logging.getLogger('main')
 STATIC = os.path.join(os.path.dirname(__file__), 'static')
@@ -44,6 +44,7 @@ async def start_jobs(app):
         every('trailers', extra.trailer_warm, 3 * 3600, 300),
         every('markers', markers.job, 120, 180),
         every('watch', filelist.watch_job, 2 * 3600, 600),
+        every('subs', subs.job, 600, 240),
     )]
 
 
@@ -56,6 +57,7 @@ def make_app():
     db.conn()
     from . import cert
     cert.schema()
+    subs.schema()
     app = web.Application(middlewares=[auth.guard], client_max_size=2 * 1024 * 1024)
     auth.routes(app)
     catalog.routes(app)

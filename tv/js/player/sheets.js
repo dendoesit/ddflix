@@ -39,6 +39,7 @@
     cur.items.forEach(function (it, i) { it.classList.toggle('foc', i === cur.idx); });
   }
   BF.sheets = {
+    refresh: function () { if (cur && cur.kind === 'as' && el()) render(); },
     open: function (kind) { cur = { kind: kind, idx: null }; el().classList.add('on'); document.getElementById('player').classList.add('sheet'); render(); if (cur.idx == null) { cur.idx = 0; paint(); } },
     close: function () { cur = null; document.getElementById('player').classList.remove('sheet'); var e = el(); if (e) { e.classList.remove('on'); e.style.transform = ''; } },
     key: function (k) {

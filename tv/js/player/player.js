@@ -327,15 +327,46 @@
     st.pos = st.duration || st.pos; saveProgress(true).then(function () { P.close(); });
   }
   // ---------------- subtitles
-  function loadSub(key) {
-    var st = P.st; st.sub = key; st.cues = []; subEl.textContent = ''; clearTimeout(st.subT);
-    if (!key) return;
+  // every switch says what happened: on (with the language), off, still being prepared, failed
+  function subLabel(k) { var s = ((P.st && P.st.m && P.st.m.subs) || []).filter(function (x) { return x.key === k; })[0]; return s ? (s.display || s.label) : ''; }
+  function loadSub(key, announce, tries) {
+    var st = P.st; st.sub = key; st.cues = []; subEl.textContent = ''; lastCue = ''; clearTimeout(st.subT);
+    tries = tries || 0;
+    if (!key) { if (announce) BF.toast(BF.t('p.suboff')); return; }
     var want = key, mid = st.m.id;
     A.text('/api/media/' + mid + '/sub/' + key + '.vtt').then(function (r) {
-      if (!P.st || P.st.sub !== want || P.st.m.id !== mid) return;
-      if (r.headers.get('X-Subs-Pending')) { var ra = parseInt(r.headers.get('Retry-After') || '10', 10); st.subT = setTimeout(function () { if (P.st && P.st.sub === want) loadSub(want); }, ra * 1000); }
-      if (r.status === 200) { st.cues = BF.vtt.parse(r.text); BF.log('player', 'subs ' + key + ' cues ' + st.cues.length); }
-    }, function (e) { BF.log('player', 'subs err ' + e.message); });
+      if (!P.st || P.st !== st || P.st.sub !== want || P.st.m.id !== mid) return;
+      var cues = r.status === 200 ? BF.vtt.parse(r.text) : [];
+      if (r.status === 200 && (r.headers.get('X-Subs-Pending') || !cues.length)) {
+        if (announce && !tries) BF.toast(BF.t('p.subwait', { l: subLabel(key) }));
+        if (tries < 60) st.subT = setTimeout(function () { if (P.st === st && st.sub === want) loadSub(want, announce, tries + 1); }, 3000);
+        else BF.toast(BF.t('p.suberr', { l: subLabel(key) }));
+        return;
+      }
+      if (r.status !== 200) { BF.toast(BF.t('p.suberr', { l: subLabel(key) })); return; }
+      st.cues = cues; BF.log('player', 'subs ' + key + ' cues ' + cues.length);
+      if (announce || tries) BF.toast(BF.t('p.subon', { l: subLabel(key) }));
+    }, function (e) { BF.log('player', 'subs err ' + e.message); if (P.st === st && st.sub === want) BF.toast(BF.t('p.suberr', { l: subLabel(key) })); });
+  }
+  // the server is still preparing / downloading subtitles (Romanian, English): refresh the list, switch to the preferred one
+  function watchSubs(st, n) {
+    n = n || 0;
+    if (P.st !== st || n > 40) return;
+    st.subW = setTimeout(function () {
+      if (P.st !== st) return;
+      A.media(st.m.id).then(function (m) {
+        if (P.st !== st) return;
+        var had = {}; (st.m.subs || []).forEach(function (s) { had[s.key] = 1; });
+        var fresh = (m.subs || []).filter(function (s) { return !had[s.key]; });
+        st.m.subs = m.subs || [];
+        if (fresh.length) {
+          if (!st.subManual && m.prefSub && m.prefSub !== st.sub) { loadSub(m.prefSub, true); saveProgress(); }
+          else BF.toast(BF.t('p.subnew', { l: fresh.map(function (s) { return s.display || s.label; }).join(', ') }));
+          if (BF.sheets.refresh) BF.sheets.refresh();
+        }
+        if (m.subsPending) watchSubs(st, n + 1);
+      }, function () { watchSubs(st, n + 1); });
+    }, 6000);
   }
   var lastCue = '';
   function subs() {
@@ -425,7 +456,7 @@
       st.audio = ov ? ov.audio : (m.defaultAudio || 0);
       q('.p-title').textContent = o.title || m.title || '';
       q('.p-sub').textContent = m.season != null ? BF.t('meta.ep', { s: m.season, e: m.episode }) + (m.episodeName ? ' · ' + m.episodeName : '') : '';
-      subStyle(m.subStyle); loadSub(ov ? ov.sub : m.defaultSub);
+      subStyle(m.subStyle); loadSub(ov ? ov.sub : m.defaultSub); if (m.subsPending) watchSubs(st);
       var at = o.start != null ? o.start : (m.position > 30 && !m.watched ? Math.max(0, m.position - 3) : 0);
       st.pos = at;
       timers(); stallWatch();
@@ -448,12 +479,12 @@
     begin(at, a);
   };
   P.state = function () { return P.st; };
-  P.loadSub = function (k) { loadSub(k); saveProgress(); };
+  P.loadSub = function (k) { if (P.st) P.st.subManual = true; loadSub(k, true); saveProgress(); };
   P.close = function (silent) {
     var st = P.st; if (!st) return;
     saveProgress();
     dispatch({ type: 'close' });
-    clearInterval(pingT); clearInterval(progT); clearTimeout(C.hideT); clearTimeout(C.pendT); clearTimeout(st.subT); closeUn(false);
+    clearInterval(pingT); clearInterval(progT); clearTimeout(C.hideT); clearTimeout(C.pendT); clearTimeout(st.subT); clearTimeout(st.subW); closeUn(false);
     if (C.sheet) BF.sheets.close();
     P.st = null; eng = null; clearInterval(stallT); q('.p-spin').classList.remove('on');
     box.className = 'off'; document.body.classList.remove('av-on'); document.body.classList.remove('p-open');
@@ -507,7 +538,7 @@
       case 'prev': seekTo(0); return true;
       case 'red': BF.sheets.open('as'); C.sheet = 'as'; show(true); return true;
       case 'green': BF.sheets.open('quality'); C.sheet = 'quality'; show(true); return true;
-      case 'yellow': loadSub(st.sub ? null : (st.m.defaultSub || ((st.m.subs || []).filter(function (x) { return x.text; })[0] || {}).key)); return true;
+      case 'yellow': st.subManual = true; loadSub(st.sub ? null : (st.m.prefSub || st.m.defaultSub || ((st.m.subs || []).filter(function (x) { return x.text; })[0] || {}).key), true); saveProgress(); return true;
       case 'blue': stats(); return true;
       case 'info': show(); return true;
     }

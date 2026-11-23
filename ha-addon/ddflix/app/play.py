@@ -140,13 +140,31 @@ def sub_list(f):
         out.append({'key': 'i%d' % s['index'], 'lang': lang, 'forced': bool(disp.get('forced')) or 'forced' in title.lower(),
                     'sdh': bool(disp.get('hearing_impaired')) or 'sdh' in title.lower(), 'text': True,
                     'label': LANG.get(lang, lang.upper()) + (' · ' + title if title else ''), 'src': 'embedded', 'group': 'main'})
-    for i, p in enumerate(db.jl(f['ext_subs'], []) or []):
+    from . import subs
+    seen = {}
+    for p in db.jl(f['ext_subs'], []) or []:
         n = os.path.basename(p).lower()
-        m = re.search(r'[._ -](ro|rum|ron|romanian|en|eng|english|fr|fre|hu|hun)[._ -]', '.' + n.rsplit('.', 1)[0] + '.')
-        lang = lang3({'romanian': 'rum', 'english': 'eng'}.get(m.group(1), m.group(1))) if m else ('rum' if 'rom' in n else 'und')
-        out.append({'key': 'x%d' % i, 'lang': lang, 'forced': 'forced' in n, 'sdh': 'sdh' in n, 'text': True,
-                    'label': LANG.get(lang, lang.upper()) + ' · ' + os.path.basename(p)[-30:], 'src': 'external', 'group': 'main'})
+        lang = ext_lang(p)
+        lbl = LANG.get(lang, lang.upper()) + (' · SDH' if 'sdh' in n else '') + (' · forțată' if 'forced' in n else '')
+        seen[lbl] = seen.get(lbl, 0) + 1
+        out.append({'key': subs.key_of(p), 'lang': lang, 'forced': 'forced' in n, 'sdh': 'sdh' in n, 'text': True,
+                    'label': lbl + (' (%d)' % seen[lbl] if seen[lbl] > 1 else ''), 'src': 'external', 'group': 'main'})
+    # Netflix order: Romanian, English, then the rest; plain before SDH / forced
+    rank = {'rum': 0, 'eng': 1}
+    out.sort(key=lambda s: (rank.get(s['lang'], 2), s['forced'], s['sdh']))
     return out
+
+
+def ext_lang(p):
+    n = os.path.basename(p).lower()
+    parts = n.rsplit('.', 1)[0].replace('_', '.').replace(' ', '.').replace('-', '.').split('.')
+    codes = {'ro': 'rum', 'rum': 'rum', 'ron': 'rum', 'romanian': 'rum', 'en': 'eng', 'eng': 'eng', 'english': 'eng',
+             'fr': 'fre', 'fre': 'fre', 'hu': 'hun', 'hun': 'hun'}
+    for t in reversed(parts[-3:]):
+        if t in codes:
+            return codes[t]
+    m = re.search(r'[._ -](ro|rum|ron|romanian|en|eng|english|fr|fre|hu|hun)[._ -]', '.' + n.rsplit('.', 1)[0] + '.')
+    return codes.get(m.group(1), m.group(1)) if m else ('rum' if 'rom' in n else 'und')
 
 
 async def media(request):
@@ -163,16 +181,12 @@ async def media(request):
     if pr and pr['audio_n'] is not None and pr['audio_n'] < len(au):
         da = pr['audio_n']
     ds = None
-    if pr and pr['sub_key'] is not None:
+    if pr and pr['sub_key'] is not None and (pr['sub_key'] == '' or any(s['key'] == pr['sub_key'] for s in su)):
         ds = pr['sub_key'] or None
     else:
-        for lang in prefs.get('subs') or []:
-            c = [s for s in su if s['lang'] == lang3(lang) and not s['forced']]
-            if c:
-                # only auto-enable subs when the audio is not already in that language
-                if not any(a['n'] == da and a['lang'] == lang3(lang) for a in au):
-                    ds = c[0]['key']
-                break
+        ds = pref_sub(prefs, su, au, da)
+    from . import subs
+    sp = subs.want(f)
     out = media_out(f, pr)
     ep_name = None
     if f['season'] is not None and t:
@@ -185,11 +199,24 @@ async def media(request):
         if x['id'] == f['id'] and i + 1 < len(fs) and f['season'] is not None:
             nxt = media_out(fs[i + 1], prog_of(pid, fs[i + 1]['id']))
             nxt['name'] = '%s S%d E%d' % (t['name'] if t else '', fs[i + 1]['season'], fs[i + 1]['episode'])
+            subs.want(fs[i + 1])
     rt = db.q1('SELECT value FROM rating WHERE profile_id=? AND imdb=?', (pid, f['imdb'])) if pid else None
     out.update({'imdb': f['imdb'], 'title': t['name'] if t else '', 'episodeName': ep_name, 'audio': au, 'subs': su, 'defaultAudio': da,
                 'defaultSub': ds, 'subStyle': prefs.get('subStyle'), 'nextMedia': nxt, 'profile': pid, 'markers': markers.markers_out(f['id']), 'trickplay': markers.trick_out(f['id']),
-                'rating': rt['value'] if rt else 0, 'resolution': '%dp' % (f['height'] or 0)})
+                'rating': rt['value'] if rt else 0, 'resolution': '%dp' % (f['height'] or 0), 'subsPending': sp,
+                'prefSub': pref_sub(prefs, su, au, da)})
     return jok(out)
+
+
+def pref_sub(prefs, su, au, da):
+    """The subtitle the profile's language order picks (none when the audio is already in that language)."""
+    for lang in prefs.get('subs') or []:
+        c = [s for s in su if s['lang'] == lang3(lang) and not s['forced']]
+        if c:
+            if not any(a['n'] == da and a['lang'] == lang3(lang) for a in au):
+                return c[0]['key']
+            return None
+    return None
 
 
 def catalog_prefs(p):
@@ -661,12 +688,16 @@ async def sub(request):
     hdr = {'Content-Type': 'text/vtt; charset=utf-8', 'Cache-Control': 'private, max-age=600'}
     d = os.path.join(config.DATA_DIR, 'subs')
     os.makedirs(d, exist_ok=True)
-    if key.startswith('x'):
+    if key.startswith(('x', 'e')):
+        from . import subs
         ex = db.jl(f['ext_subs'], []) or []
-        i = int(key[1:]) if key[1:].isdigit() else -1
-        if i < 0 or i >= len(ex) or not os.path.exists(ex[i]):
+        if key.startswith('x'):
+            i = int(key[1:]) if key[1:].isdigit() else -1
+            p = ex[i] if 0 <= i < len(ex) else None
+        else:
+            p = next((x for x in ex if subs.key_of(x) == key), None)
+        if not p or not os.path.exists(p):
             return jerr(404, 'no such subtitle')
-        p = ex[i]
         if p.lower().endswith(('.srt', '.vtt')):
             return web.Response(text=srt_to_vtt(read_text(p)), headers=hdr)
         out = os.path.join(d, '%d_%s.vtt' % (f['id'], key))
