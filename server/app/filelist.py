@@ -98,6 +98,9 @@ def pick(imdb, season=None, episode=None, prefer_4k=False):
     order = ['2160p', '1080p'] if prefer_4k else ['1080p', '2160p']
     for res in order:
         c = [r for r in rs if r['res'] == res and r['seeders'] >= 5]
+        # Samsung TVs have no Dolby Vision: a DV-only file (no HDR10 layer) shows wrong colours -> only if nothing else
+        ok = [r for r in c if not (re.search(r'\.(DV|DoVi)\.', r['name'], re.I) and not re.search(r'HDR', r['name']))]
+        c = ok or c
         if c:
             return max(c, key=lambda r: r['seeders'])
     return max(rs, key=lambda r: r['seeders']) if rs else None
