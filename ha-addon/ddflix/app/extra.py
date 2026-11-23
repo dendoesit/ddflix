@@ -165,7 +165,7 @@ async def trailer_warm():
 
 
 # ---------------- settings / storage / follows / stream-info
-DEFAULTS = {'quality': 'auto', 'lang': 'ro', 'downloads': True}
+DEFAULTS = {'quality': 'auto', 'lang': 'ro', 'downloads': True, 'dlQuality': '1080'}
 
 
 def settings():
@@ -202,6 +202,8 @@ async def settings_put(request):
         s['quality'] = b['quality']
     if b.get('lang') in ('ro', 'en'):
         s['lang'] = b['lang']
+    if b.get('dlQuality') in ('1080', '4k'):
+        s['dlQuality'] = b['dlQuality']
     if 'downloads' in b:
         s['downloads'] = bool(b['downloads'])
     db.set_setting('web_settings', json.dumps(s))

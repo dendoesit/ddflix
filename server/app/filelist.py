@@ -1,5 +1,7 @@
 """FileList API: find releases for any title (by IMDb id), download on demand into qBittorrent (NAS), live search of new titles.
 API: https://filelist.io/api.php?username=..&passkey=..&action=search-torrents&type=imdb|name&query=..  (150 calls/hour)"""
+import asyncio
+import json
 import logging
 import re
 import time
@@ -121,9 +123,10 @@ def dl_out(t, row):
     state = t.get('state', '')
     st = 'done' if t.get('progress', 0) >= 1 else 'error' if 'error' in state or state == 'missingFiles' else \
         'paused' if 'paused' in state or 'stopped' in state else 'downloading' if 'DL' in state or state in ('downloading', 'metaDL') else 'queued'
+    sel = ep_selection(t.get('hash')) if row else None
     return {'id': t.get('hash'), 'state': st, 'progress': round(t.get('progress', 0), 3), 'name': t.get('name'), 'size': t.get('size'),
             'eta': t.get('eta'), 'speed': t.get('dlspeed'), 'imdb': row['imdb'] if row else None, 'season': row['season'] if row else None,
-            'episode': row['episode'] if row else None, 'releaseId': row['release_id'] if row else None}
+            'episode': row['episode'] if row else None, 'episodes': sel or None, 'releaseId': row['release_id'] if row else None}
 
 
 async def downloads_for(imdb=None):
@@ -137,7 +140,50 @@ async def downloads_for(imdb=None):
     return out
 
 
-async def start_download(rel, device_id=None):
+def ep_selection(h):
+    v = db.get_setting('dlsel:' + h)
+    return json.loads(v) if v else None
+
+
+def episode_files(files, season, episode):
+    """Indexes of the video files of SxxEyy in a torrent's file list (qBittorrent 'files' entries or plain names)."""
+    out = []
+    for i, f in enumerate(files):
+        name = f['name'] if isinstance(f, dict) else f
+        base = name.replace('\\', '/').rsplit('/', 1)[-1]
+        if not base.lower().endswith(library.VIDEO_EXT) or 'sample' in base.lower():
+            continue
+        m = library.SE_RE.search('.' + base + '.') or library.X_RE.search('.' + base + '.')
+        if m and int(m.group(1)) == season and int(m.group(2)) == episode:
+            out.append(i)
+    return out
+
+
+async def select_episode(q, h, season, episode, fresh):
+    """Only download SxxEyy from a season pack (fresh = just added paused: everything else gets priority 0)."""
+    files = []
+    for _ in range(30):
+        try:
+            files = await q.files(h)
+        except Exception:
+            files = []
+        if files:
+            break
+        await asyncio.sleep(0.5)
+    want = episode_files(files, season, episode)
+    if not want:
+        raise RuntimeError('Episodul S%02dE%02d nu e în pachetul de sezon' % (season, episode))
+    if fresh:
+        await q.prio(h, [i for i in range(len(files)) if i not in want], 0)
+    await q.prio(h, want, 1)
+    await q.resume(h)
+    sel = ep_selection(h) or []
+    if episode not in sel:
+        sel.append(episode)
+    db.set_setting('dlsel:' + h, json.dumps(sorted(sel)))
+
+
+async def start_download(rel, device_id=None, episode=None):
     title = rel['name']
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
         async with s.get('https://filelist.io/download.php', params={'id': rel['id'], 'passkey': config.FL_PASSKEY}, headers=rss.UA) as r:
@@ -145,12 +191,25 @@ async def start_download(rel, device_id=None):
             data = await r.read()
         if not data.startswith(b'd'):
             raise RuntimeError('FileList nu a întors un .torrent')
+        h = torrent_hash(data)
         q = rss.Qbt(s)
         await q.prepare()
-        await q.add(data, title, rss.save_dir(title))
-    h = torrent_hash(data)
-    db.x('INSERT OR REPLACE INTO download(hash, release_id, imdb, season, episode, name, device_id, added_at) VALUES(?,?,?,?,?,?,?,?)',
-         (h, rel['id'], rel['imdb'], rel['season'], rel['episode'], title, device_id, db.now()))
+        one = episode is not None and rel['episode'] is None and rel['season'] is not None
+        existing = {t.get('hash') for t in await q.list()}
+        if h in existing:
+            if one:
+                await select_episode(q, h, rel['season'], int(episode), fresh=False)
+            else:
+                await q.prio(h, list(range(len(await q.files(h)))), 1)
+                db.set_setting('dlsel:' + h, '')
+                await q.resume(h)
+        else:
+            await q.add(data, title, rss.save_dir(title), paused=one)
+            if one:
+                await select_episode(q, h, rel['season'], int(episode), fresh=True)
+    if not db.q1('SELECT 1 FROM download WHERE hash=?', (h,)):
+        db.x('INSERT INTO download(hash, release_id, imdb, season, episode, name, device_id, added_at) VALUES(?,?,?,?,?,?,?,?)',
+             (h, rel['id'], rel['imdb'], rel['season'], rel['episode'], title, device_id, db.now()))
     _torrents['at'] = 0
     return h
 
@@ -195,21 +254,28 @@ async def tv_download(request):
     season = b.get('season')
     if season is not None and t and t['type'] == 'movie':
         return jerr(400, 'season only for series')
+    from . import extra
+    k4 = extra.settings().get('dlQuality') == '4k'
+    episode = b.get('episode')
+    episode = int(episode) if episode is not None and str(episode).isdigit() else None
     if b.get('release_id'):
         rel = db.q1('SELECT * FROM release WHERE id=? AND imdb=?', (int(b['release_id']), imdb))
+    elif season is not None and episode is not None:
+        rel = pick(imdb, int(season), episode, k4) or pick(imdb, int(season), None, k4)  # FileList usually only keeps the season pack
     else:
-        rel = pick(imdb, int(season) if season is not None else None, b.get('episode'))
-        if not rel and season is not None:  # no season pack: newest episode releases are handled one by one by the client
-            rel = None
+        rel = pick(imdb, int(season) if season is not None else None, None, k4)
     if not rel:
         return jerr(404, 'Nu am găsit nimic cu seederi pe FileList')
+    one = episode is not None and rel['episode'] is None
     for d in await downloads_for(imdb):
         if d['releaseId'] == rel['id'] and d['state'] != 'error':
+            if one and d.get('episodes') is not None and episode not in d['episodes']:
+                break  # same pack, another episode: add it to the selection below
             return jok({'ok': True, 'download': d, 'release': release_out(rel, d)})
     if b.get('dryRun'):
         return jok({'ok': True, 'dryRun': True, 'download': None, 'release': release_out(rel)})
     try:
-        h = await start_download(rel, dev['id'] if dev else None)
+        h = await start_download(rel, dev['id'] if dev else None, episode if one else None)
     except Exception as e:
         return jerr(502, config.mask(e)[:200])
     d = {'id': h, 'state': 'queued', 'progress': 0, 'name': rel['name'], 'imdb': imdb, 'season': rel['season'], 'releaseId': rel['id']}

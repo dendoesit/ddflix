@@ -111,8 +111,11 @@ class Qbt:
         except aiohttp.ClientResponseError:
             pass  # exists
 
-    async def add(self, torrent, name, save):
+    async def add(self, torrent, name, save, paused=False):
         fd = aiohttp.FormData()
+        if paused:
+            fd.add_field('paused', 'true')   # qBittorrent 4.x
+            fd.add_field('stopped', 'true')  # qBittorrent 5.x
         fd.add_field('torrents', torrent, filename='t.torrent', content_type='application/x-bittorrent')
         fd.add_field('category', config.QBT_CATEGORY)
         fd.add_field('savepath', save)
@@ -121,6 +124,21 @@ class Qbt:
         t = await self.call('POST', 'torrents/add', data=fd)
         if isinstance(t, str) and 'Fails' in t:
             raise RuntimeError('qBittorrent a refuzat torrentul')
+
+    async def files(self, h):
+        return await self.call('GET', 'torrents/files', params={'hash': h})
+
+    async def prio(self, h, ids, priority):
+        if ids:
+            await self.call('POST', 'torrents/filePrio', data={'hash': h, 'id': '|'.join(str(i) for i in ids), 'priority': str(priority)})
+
+    async def resume(self, h):
+        for path in ('torrents/resume', 'torrents/start'):  # 4.x / 5.x
+            try:
+                await self.call('POST', path, data={'hashes': h})
+                return
+            except aiohttp.ClientResponseError:
+                continue
 
     async def list(self):
         return await self.call('GET', 'torrents/info', params={'category': config.QBT_CATEGORY, 'sort': 'added_on', 'reverse': 'true'})

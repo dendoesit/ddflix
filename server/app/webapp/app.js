@@ -327,6 +327,7 @@
             if (f) { var b = document.createElement('button'); b.className = 'btn sm'; b.textContent = '▶ ' + (f.position > 30 && !f.watched ? 'Reia' : 'Redă'); b.onclick = function () { play(f.id, t.name); }; a.appendChild(b); }
             else if (e.download || dlFor(imdb + '|' + se.season + '|' + e.episode)) a.appendChild(dlEl(imdb + '|' + se.season + '|' + e.episode));
             else if (e.versions && e.versions.length) a.appendChild(dlBtn('⬇ Descarcă', { imdb: imdb, release_id: e.versions[0] }, false, true, imdb + '|' + se.season + '|' + e.episode));
+            else if (se.packs && se.packs.length) a.appendChild(dlBtn('⬇ Descarcă', { imdb: imdb, season: se.season, episode: e.episode }, false, true, imdb + '|' + se.season + '|' + e.episode));
             else a.innerHTML = '<span class="mut">' + (e.released && e.released > new Date().toISOString().slice(0, 10) ? 'Apare pe ' + esc(e.released) : 'Indisponibil') + '</span>';
             box.appendChild(d);
           });
@@ -362,7 +363,9 @@
       if (i.imdb !== p[0]) return false;
       if (p[1] === '') return true;
       if (String(i.season) !== p[1]) return false;
-      return p[2] === '' || i.episode == null || String(i.episode) === p[2];
+      if (p[2] === '') return true;
+      if (i.episodes && i.episodes.length) return i.episodes.indexOf(+p[2]) >= 0;
+      return i.episode == null || String(i.episode) === p[2];
     }).sort(function (a, b) { return (a.state === 'done') - (b.state === 'done'); })[0];
   }
   function dlEl(k) { var e = document.createElement('div'); e.className = 'dlp'; e.setAttribute('data-dlk', k); e.hidden = true; paintOne(e); return e; }
@@ -409,7 +412,7 @@
         list.innerHTML = d.items.length ? '' : '<p class="pad mut">Nimic în descărcare. Caută un serial sau un film și apasă „Descarcă”.</p>';
         d.items.forEach(function (x) {
           var e = document.createElement('div'); e.className = 'dl';
-          var se = x.season != null ? 'Sezonul ' + x.season + (x.episode != null ? ', episodul ' + x.episode : ' (tot sezonul)') : '';
+          var se = x.season != null ? 'Sezonul ' + x.season + (x.episode != null ? ', episodul ' + x.episode : x.episodes && x.episodes.length ? (x.episodes.length === 1 ? ', episodul ' : ', episoadele ') + x.episodes.join(', ') : ' (tot sezonul)') : '';
           e.innerHTML = (x.imdb ? '<img alt="" src="' + img('poster', x.imdb, 200) + '">' : '') + '<div class="i"><div class="n">' + esc(se || x.name) + '</div><div class="r">' + esc(x.name) + ' · ' + gb(x.size) + '</div>' +
             '<div class="s">' + esc(dlInfo(x)) + '</div>' + (x.state === 'done' ? '' : '<div class="prog"><i style="width:' + Math.max(2, Math.round(x.progress * 100)) + '%"></i></div>') + '</div>';
           if (x.imdb) e.onclick = function () { location.hash = '#/t/' + encodeURIComponent(x.imdb); };
@@ -522,8 +525,11 @@
       Promise.all([q('/api/settings'), q('/api/storage').catch(function () { return {}; }), q('/api/health').catch(function () { return {}; })]).then(function (r) {
         var s = r[0], st = r[1], h = r[2];
         var pl = app.querySelector('#s-play');
-        pl.innerHTML = '<div class="frm"><label>Calitate preferată<select class="q"><option value="auto">Automat</option><option value="original">Originală (fără conversie)</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></label></div>';
+        pl.innerHTML = '<div class="frm"><label>Calitate la redare<select class="q"><option value="auto">Automat</option><option value="original">Originală (fără conversie)</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></label>' +
+          '<label>Calitate la descărcare<select class="dq"><option value="1080">1080p (fișiere mai mici)</option><option value="4k">4K / HDR când există (cea mai bună)</option></select></label></div>';
         var qs = pl.querySelector('.q'); qs.value = s.quality || 'auto';
+        var dq = pl.querySelector('.dq'); dq.value = s.dlQuality || '1080';
+        dq.onchange = function () { q('/api/settings', { method: 'PUT', body: { dlQuality: dq.value } }).then(function () { toast('Salvat'); }, function (e) { toast(e.message); }); };
         qs.onchange = function () { q('/api/settings', { method: 'PUT', body: { quality: qs.value } }).then(function () { toast('Salvat'); }, function (e) { toast(e.message); }); };
         var disk = st.media ? gb(st.media.used) + ' folosiți din ' + gb(st.media.total) + ' (' + gb(st.media.free) + ' liberi)' : '—';
         app.querySelector('#s-srv').innerHTML = 'NAS (media): ' + esc(disk) + '<br>Fișiere în bibliotecă: ' + esc(h.files != null ? h.files : '—') +
