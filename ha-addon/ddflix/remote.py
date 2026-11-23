@@ -1,10 +1,11 @@
 """Remote access for the DDflix web app: Tailscale (userspace, no router changes) + Funnel -> public HTTPS to port 8091.
-Writes /data/tailscale/status.json: state = starting | needs-login | needs-funnel | running | error, loginUrl, enableUrl, url.
-The DDflix server shows it in Settings; the public port (8091) only answers password logins / device tokens."""
+Writes /data/tailscale/status.json: state = starting | needs-login | needs-funnel | running | error, loginUrl, enableUrl, url,
+backend. The DDflix server shows it in Settings; the public port (8091) only answers password logins / device tokens."""
 import json
 import os
 import re
 import subprocess
+import threading
 import time
 
 D = '/data/tailscale'
@@ -13,6 +14,11 @@ TS = ['tailscale', '--socket', SOCK]
 os.makedirs(D, exist_ok=True)
 STATUS = os.path.join(D, 'status.json')
 URL_RE = re.compile(r'https://login\.tailscale\.com/\S+')
+UP = {'proc': None, 'url': '', 'out': ''}
+
+
+def log(msg):
+    print('[remote] ' + re.sub(r'(login\.tailscale\.com/a/)\S+', r'\1***', msg), flush=True)
 
 
 def save(**kw):
@@ -40,49 +46,66 @@ def status():
         return {}
 
 
+def start_up():
+    """One interactive login at a time; it keeps running until the login is done (never restarted while alive)."""
+    if UP['proc'] is not None and UP['proc'].poll() is None:
+        return
+    log('tailscale up (waiting for login)')
+    p = subprocess.Popen(TS + ['up', '--hostname=ddflix', '--accept-dns=false', '--qr=false'],
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    UP['proc'] = p
+
+    def reader():
+        for line in p.stdout:
+            UP['out'] = (UP['out'] + line)[-2000:]
+            m = URL_RE.search(line)
+            if m:
+                UP['url'] = m.group(0)
+                log('login link ready')
+        log('tailscale up exited rc=%s' % p.wait())
+    threading.Thread(target=reader, daemon=True).start()
+
+
 def main():
     save(state='starting')
     daemon = None
-    up = None
-    login_url = ''
+    last = None
     while True:
         if daemon is None or daemon.poll() is not None:
+            log('starting tailscaled')
             daemon = subprocess.Popen(['tailscaled', '--tun=userspace-networking', '--statedir=' + D, '--socket=' + SOCK],
                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(4)
         st = status()
         backend = st.get('BackendState', '')
-        if backend in ('NeedsLogin', 'NoState', 'Stopped', ''):
-            if up is None or up.poll() is not None:
-                up = subprocess.Popen(TS + ['up', '--hostname=ddflix', '--accept-dns=false', '--qr=false'],
-                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                os.set_blocking(up.stdout.fileno(), False)
-            try:
-                chunk = up.stdout.read() or ''
-            except (TypeError, OSError):
-                chunk = ''
-            m = URL_RE.search(chunk) or (URL_RE.search(st.get('AuthURL') or '') if st.get('AuthURL') else None)
-            if m:
-                login_url = m.group(0)
-            save(state='needs-login', loginUrl=login_url or st.get('AuthURL') or '')
-        elif backend == 'NeedsMachineAuth':
-            save(state='needs-login', loginUrl='https://login.tailscale.com/admin/machines')
-        elif backend == 'Running':
+        if backend != last:
+            log('backend ' + (backend or '?'))
+            last = backend
+        if backend == 'Running':
+            UP['url'] = ''
             dns = ((st.get('Self') or {}).get('DNSName') or '').rstrip('.')
             url = 'https://' + dns if dns else ''
             rc, out = ts('funnel', 'status', timeout=10)
-            if '8091' not in out or 'Funnel on' not in out:
+            if '8091' not in out:
                 rc, out = ts('funnel', '--bg', '8091', timeout=25)
+                log('funnel --bg 8091 rc=%s %s' % (rc, out.strip()[-200:]))
                 if rc != 0:  # Funnel / HTTPS not enabled on the tailnet yet: the output has the link that enables it
                     m = URL_RE.search(out)
-                    save(state='needs-funnel', enableUrl=m.group(0) if m else 'https://login.tailscale.com/admin/acls', url=url,
-                         detail=out[-300:])
+                    save(state='needs-funnel', enableUrl=m.group(0) if m else 'https://login.tailscale.com/admin/dns', url=url,
+                         backend=backend, detail=out[-300:])
                     time.sleep(15)
                     continue
-            save(state='running', url=url)
-            time.sleep(60)
+            save(state='running', url=url, backend=backend)
+            time.sleep(30)
             continue
-        time.sleep(5)
+        if backend == 'NeedsMachineAuth':
+            save(state='needs-login', loginUrl='https://login.tailscale.com/admin/machines', backend=backend)
+        elif backend in ('NeedsLogin', 'NoState', 'Stopped', ''):
+            start_up()
+            save(state='needs-login', loginUrl=UP['url'] or st.get('AuthURL') or '', backend=backend)
+        else:  # Starting
+            save(state='starting', backend=backend)
+        time.sleep(4)
 
 
 if __name__ == '__main__':
@@ -90,5 +113,6 @@ if __name__ == '__main__':
         try:
             main()
         except Exception as e:  # never die: the add-on keeps serving the LAN
+            log('error ' + str(e)[:200])
             save(state='error', detail=str(e)[:300])
             time.sleep(30)
