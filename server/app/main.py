@@ -43,6 +43,7 @@ async def start_jobs(app):
         every('top10', discover.netflix_top, 12 * 3600, 20),
         every('trailers', extra.trailer_warm, 3 * 3600, 300),
         every('markers', markers.job, 120, 180),
+        every('watch', filelist.watch_job, 2 * 3600, 600),
     )]
 
 

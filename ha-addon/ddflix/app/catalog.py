@@ -309,7 +309,10 @@ def seasons_for(t):
             x.update({'versions': [], 'inPlex': False, 'plexLink': None, 'download': None, 'rating': r[0] if r else None,
                       'votes': r[1] if r else None})
             el.append(x)
-        out.append({'season': s, 'inPlex': 0, 'available': len([1 for x in have if x[0] == s]), 'packs': [], 'episodes': el})
+        today = time.strftime('%Y-%m-%d')
+        aired = len([1 for x in el if x.get('released') and x['released'][:10] <= today] or [1 for x in have if x[0] == s])
+        out.append({'season': s, 'inPlex': 0, 'available': len([1 for x in have if x[0] == s]), 'aired': max(aired, len([1 for x in have if x[0] == s])),
+                    'packs': [], 'episodes': el})
     return out
 
 
@@ -335,7 +338,7 @@ async def title(request):
     trailer_state = extra.state(imdb)
     agg = library_titles()
     c = card(t, agg.get(imdb))
-    following = bool(db.q1('SELECT 1 FROM follow WHERE pattern=?', (t['name'],)))
+    following = bool(db.q1('SELECT 1 FROM follow WHERE pattern=?', (t['name'],)) or db.q1('SELECT 1 FROM watch WHERE imdb=?', (imdb,)))
     genres = db.jl(t['genres'], []) or []
     sim = []
     if genres:

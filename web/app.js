@@ -322,7 +322,15 @@
           tabs.innerHTML = ''; box.innerHTML = '';
           seasons.forEach(function (s) { var b = document.createElement('button'); b.textContent = 'Sezonul ' + s.season + (s.available ? ' · ' + s.available + '/' + s.episodes.length : ''); b.className = s.season === cur ? 'on' : ''; b.onclick = function () { cur = s.season; draw(); }; tabs.appendChild(b); });
           var se = seasons.filter(function (s) { return s.season === cur; })[0]; if (!se) return;
-          if (se.available < se.episodes.length) { var pk = document.createElement('div'); pk.className = 'pad'; var sk = imdb + '|' + se.season + '|'; pk.appendChild(DL.items.some(function (x) { return x.imdb === imdb && x.season === se.season && x.episode == null; }) ? dlEl(sk) : dlBtn('⬇  Descarcă tot sezonul ' + se.season, { imdb: imdb, season: se.season }, !se.packs.length && !se.episodes.some(function (x) { return x.versions && x.versions.length; }), false, sk)); box.appendChild(pk); }
+          var aired = se.aired != null ? se.aired : se.episodes.length;
+          if (se.available < aired) {  // some aired episodes are missing: whole season, or the rest of an airing one
+            var pk = document.createElement('div'); pk.className = 'pad'; var sk = imdb + '|' + se.season + '|';
+            var label = se.available ? '⬇  Descarcă restul sezonului ' + se.season : '⬇  Descarcă tot sezonul ' + se.season;
+            pk.appendChild(DL.items.some(function (x) { return x.imdb === imdb && x.season === se.season && x.episode == null && !(x.episodes && x.episodes.length); }) ? dlEl(sk) :
+              dlBtn(label, { imdb: imdb, season: se.season }, !se.packs.length && !se.episodes.some(function (x) { return x.versions && x.versions.length; }), false, sk));
+            if (t.following) pk.insertAdjacentHTML('beforeend', '<div class="mut" style="margin-top:6px">🔔 Urmărești serialul: episoadele noi se descarcă singure.</div>');
+            box.appendChild(pk);
+          } else if (t.following) box.insertAdjacentHTML('beforeend', '<div class="pad mut">🔔 Urmărești serialul: episoadele noi se descarcă singure când apar.</div>');
           se.episodes.forEach(function (e) {
             var f = byEp[se.season + ':' + e.episode], d = document.createElement('div'); d.className = 'ep';
             d.innerHTML = (e.thumb ? '<img loading="lazy" alt="" src="' + img('episode', imdb, 320).replace('/img/episode/' + encodeURIComponent(imdb), '/img/episode/' + encodeURIComponent(imdb) + '/' + se.season + '/' + e.episode) + '">' : '<div class="ph"></div>') +
@@ -398,7 +406,7 @@
     b.onclick = function () {
       b.disabled = true; b.textContent = '…';
       q('/api/tv/download', { body: body }).then(function (d) {
-        toast('Descărcarea a pornit. Progresul îl vezi aici și în Descărcări.');
+        toast(d.message || (d.watching ? 'Am pornit ' + (d.episodes && d.episodes.length ? (d.episodes.length === 1 ? 'episodul ' : 'episoadele ') + d.episodes.join(', ') : 'descărcarea') + '. Episoadele noi se descarcă singure când apar.' : 'Descărcarea a pornit. Progresul îl vezi aici și în Descărcări.'));
         var k = key || (body.imdb + '|' + (body.season != null ? body.season : '') + '|');
         var el = dlEl(k); el.hidden = false; el.setAttribute('data-started', '1'); el.innerHTML = '<span>⬇ Pornește… ' + esc(d.release && d.release.name || '') + '</span><i><b style="width:2%"></b></i>';
         b.replaceWith(el); dlPoll();

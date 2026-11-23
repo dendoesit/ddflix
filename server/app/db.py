@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS release(id INTEGER PRIMARY KEY, imdb TEXT, name TEXT,
   category TEXT, freeleech INTEGER, season INTEGER, episode INTEGER, pack INTEGER, res TEXT, hdr TEXT, codec TEXT, audio TEXT, source TEXT,
   uploaded TEXT, fetched_at INTEGER);
 CREATE INDEX IF NOT EXISTS release_imdb ON release(imdb);
+CREATE TABLE IF NOT EXISTS watch(imdb TEXT PRIMARY KEY, season INTEGER, created_at INTEGER, last_check INTEGER);
 CREATE INDEX IF NOT EXISTS progress_recent ON progress(profile_id, updated_at);
 CREATE TABLE IF NOT EXISTS download(hash TEXT PRIMARY KEY, release_id INTEGER, imdb TEXT, season INTEGER, episode INTEGER, name TEXT,
   device_id INTEGER, added_at INTEGER);

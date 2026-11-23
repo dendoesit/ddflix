@@ -23,10 +23,14 @@
       best(vs.filter(function (v) { return v.resolution === '2160p' && v.seeders >= MIN_SEED; })) ||
       vs.sort(function (a, b) { return (b.seeders || 0) - (a.seeders || 0); })[0] || null;
   }
-  // first season (> 0) that is not in the library yet and has a pack with seeders
+  // a season can be downloaded while some of its AIRED episodes are missing (whole season, or the rest of an airing one);
+  // the server picks the pack or the single episodes (server S8: 'aired' per season)
+  function missing(s) { var aired = s.aired != null ? s.aired : (s.episodes || []).length; return !s.inPlex && (s.available || 0) < aired; }
+  function partial(t, sn) { return (t.seasons || []).some(function (s) { return s.season === sn && (s.available || 0) > 0; }); }
   function seasonToDownload(t, pref) {
-    if (pref != null && !(t.seasons || []).some(function (s) { return s.season === pref && (s.inPlex || s.available); }) && activeDownload(t, pref) == null && pickRelease(t, pref)) return pref;
-    var ss = (t.seasons || []).filter(function (s) { return s.season > 0 && !s.inPlex && !s.available; }).sort(function (a, b) { return a.season - b.season; });
+    var ps = (t.seasons || []).filter(function (s) { return s.season === pref; })[0];
+    if (pref != null && ps && missing(ps) && activeDownload(t, pref) == null && pickRelease(t, pref)) return pref;
+    var ss = (t.seasons || []).filter(function (s) { return s.season > 0 && missing(s) && activeDownload(t, s.season) == null; }).sort(function (a, b) { return a.season - b.season; });
     for (var i = 0; i < ss.length; i++) if (pickRelease(t, ss[i].season)) return ss[i].season;
     return null;
   }
@@ -47,10 +51,10 @@
       var dl = activeDownload(t);
       var dr = activeRow(t);
       // series: a selected season that can be downloaded wins over another season's progress
-      if (series && st.season != null && seasonToDownload(t, st.season) === st.season && activeDownload(t, st.season) == null) { out.primary = { id: 'download', key: 'title.dlseason', vars: { s: st.season }, season: st.season }; out.note = { key: 'title.notonserver' }; }
+      if (series && st.season != null && seasonToDownload(t, st.season) === st.season && activeDownload(t, st.season) == null) { out.primary = { id: 'download', key: partial(t, st.season) ? 'title.dlrest' : 'title.dlseason', vars: { s: st.season }, season: st.season }; out.note = { key: 'title.notonserver' }; }
       else if (dl != null) out.primary = series && dr && dr.season != null ? { id: 'dlprog', key: 'title.dlseasonprog', vars: { s: dr.season, p: dl }, progress: dl, season: dr.season } : { id: 'dlprog', key: 'title.downloading', vars: { p: dl }, progress: dl };
       else if (!series && pickRelease(t)) { out.primary = { id: 'download', key: 'title.download' }; out.note = { key: 'title.notonserver' }; }
-      else if (series && seasonToDownload(t, st.season) != null) { var sn = seasonToDownload(t, st.season); out.primary = { id: 'download', key: 'title.dlseason', vars: { s: sn }, season: sn }; out.note = { key: 'title.notonserver' }; }
+      else if (series && seasonToDownload(t, st.season) != null) { var sn = seasonToDownload(t, st.season); out.primary = { id: 'download', key: partial(t, sn) ? 'title.dlrest' : 'title.dlseason', vars: { s: sn }, season: sn }; out.note = { key: 'title.notonserver' }; }
       else out.note = { key: series ? 'title.notonserver' : 'title.nodl' };
     }
     if (series && next) out.tabs.push('episodes');
@@ -61,6 +65,6 @@
     if (t.trailer) out.tabs.push('trailers');
     return out;
   }
-  var api = { actionsFor: actionsFor, activeDownload: activeDownload, pct: pct, pickRelease: pickRelease, seasonToDownload: seasonToDownload };
+  var api = { partial: partial, actionsFor: actionsFor, activeDownload: activeDownload, pct: pct, pickRelease: pickRelease, seasonToDownload: seasonToDownload };
   if (typeof module !== 'undefined') module.exports = api; else { root.BF = root.BF || {}; root.BF.actions = api; }
 })(typeof window !== 'undefined' ? window : global);

@@ -353,10 +353,10 @@
     var dlc = u.el('span', 'ep-chip ep-chip-dl'); chips.appendChild(dlc);
     var sub = 'chips', mem = {};
     function selS() { return flat[idx] ? flat[idx].s : null; }
-    function canDl(sn) { return sn != null && BF.actions.activeDownload(t, sn) == null && !flat.some(function (x) { return x.s === sn && x.file; }) && !!BF.actions.pickRelease(t, sn); }
+    function canDl(sn) { return sn != null && BF.actions.seasonToDownload(t, sn) === sn; }  // aired episodes still missing
     function paintChips() {
       var sn = selS(), ok = canDl(sn), ci = chipIdx();
-      dlc.textContent = ok ? BF.t('title.dlseason', { s: sn }) : ''; dlc.style.display = ok ? '' : 'none';
+      dlc.textContent = ok ? BF.t(BF.actions.partial(t, sn) ? 'title.dlrest' : 'title.dlseason', { s: sn }) : ''; dlc.style.display = ok ? '' : 'none';
       seasons.forEach(function (s, i) { s.el.classList.toggle('foc', sub === 'chips' && ci === i); });
       dlc.classList.toggle('foc', sub === 'chips' && ci === seasons.length);
       if (c.setSeason) c.setSeason(sn);

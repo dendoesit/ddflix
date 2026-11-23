@@ -264,9 +264,9 @@ async def tv_download(request):
         rel = pick(imdb, int(season), episode, k4) or pick(imdb, int(season), None, k4)  # FileList usually only keeps the season pack
     else:
         rel = pick(imdb, int(season) if season is not None else None, None, k4)
-    if season is not None and episode is None and (rel is None or rel['episode'] is not None):
-        # "download season N" while the season is still airing: FileList has no pack yet, only episodes -> get them all
-        return await season_from_episodes(request, imdb, int(season), k4, dev, b.get('dryRun'))
+    if season is not None and episode is None:
+        # "download season N": whatever aired and is missing (pack when nothing is there yet, else episode by episode)
+        return await season_download(request, imdb, int(season), k4, dev, b.get('dryRun'))
     if not rel:
         return jerr(404, 'Nu am găsit nimic cu seederi pe FileList')
     one = episode is not None and rel['episode'] is None
@@ -285,32 +285,114 @@ async def tv_download(request):
     return jok({'ok': True, 'download': d, 'release': release_out(rel, d)})
 
 
-async def season_from_episodes(request, imdb, season, k4, dev, dry):
-    eps = sorted({r['episode'] for r in releases(imdb) if r['season'] == season and r['episode'] is not None and r['seeders'] > 0})
-    have = {(f['season'], f['episode']) for f in db.q('SELECT season, episode FROM media_file WHERE imdb=? AND missing=0', (imdb,))}
-    active = {(d['season'], d.get('episode')) for d in await downloads_for(imdb) if d['state'] != 'error'}
-    todo = [e for e in eps if (season, e) not in have and (season, e) not in active]
-    picks = [r for r in (pick(imdb, season, e, k4) for e in todo) if r]
-    if not picks:
-        if eps:
-            d = next((d for d in await downloads_for(imdb) if d['season'] == season), None)
-            return jok({'ok': True, 'download': d, 'release': release_out(pick(imdb, season, eps[0], k4)), 'episodes': []})
-        return jerr(404, 'Nu am găsit nimic cu seederi pe FileList')
-    if dry:
-        return jok({'ok': True, 'dryRun': True, 'download': None, 'release': release_out(picks[0]), 'episodes': [r['episode'] for r in picks]})
+def aired_episodes(imdb, season):
+    """Episode numbers of a season that are out already (Cinemeta air dates; FileList releases as a fallback)."""
+    t = db.q1('SELECT videos FROM title WHERE imdb=?', (imdb,))
+    today = time.strftime('%Y-%m-%d')
+    eps = {v['e'] for v in (db.jl(t['videos'], []) if t else []) or [] if v.get('s') == season and v.get('released') and v['released'][:10] <= today}
+    eps |= {r['episode'] for r in releases(imdb) if r['season'] == season and r['episode'] is not None}
+    return sorted(e for e in eps if e)
+
+
+async def missing_plan(imdb, season, k4):
+    """-> [(release, episode-or-None)] for the aired episodes of `season` that are neither on the NAS nor downloading.
+    Whole season missing + a pack -> the pack; otherwise each episode from its own release or, if FileList only has the pack,
+    from the pack with just that file selected."""
+    have = {f['episode'] for f in db.q('SELECT episode FROM media_file WHERE imdb=? AND season=? AND missing=0', (imdb, season))}
+    act = [d for d in await downloads_for(imdb) if d['state'] != 'error' and d['season'] == season]
+    if any(d.get('episode') is None and not d.get('episodes') for d in act):
+        return []  # the whole pack is already coming
+    busy = {d['episode'] for d in act if d.get('episode') is not None} | {e for d in act for e in (d.get('episodes') or [])}
+    aired = aired_episodes(imdb, season)
+    todo = [e for e in aired if e not in have and e not in busy]
+    if not todo:
+        return []
+    pack = pick(imdb, season, None, k4)
+    if pack and not have and not busy:
+        return [(pack, None)]
+    out = []
+    for e in todo:
+        r = pick(imdb, season, e, k4)
+        if r:
+            out.append((r, None))
+        elif pack:
+            out.append((pack, e))
+    return out
+
+
+def watch(imdb, season):
+    db.x('INSERT INTO watch(imdb, season, created_at, last_check) VALUES(?,?,?,?) ON CONFLICT(imdb) DO UPDATE SET season=MAX(season, excluded.season)',
+         (imdb, season, db.now(), db.now()))
+
+
+def latest_season(imdb):
+    t = db.q1('SELECT videos FROM title WHERE imdb=?', (imdb,))
+    ss = [v.get('s') for v in (db.jl(t['videos'], []) if t else []) or [] if v.get('s')]
+    ss += [r['season'] for r in releases(imdb) if r['season']]
+    return max(ss) if ss else None
+
+
+async def run_plan(imdb, plan, dev):
     first = None
-    for r in picks:
+    for rel, ep in plan:
         try:
-            h = await start_download(r, dev['id'] if dev else None)
+            h = await start_download(rel, dev['id'] if dev else None, ep)
         except Exception as e:
-            log.warning('season %s S%d E%s: %s', imdb, season, r['episode'], config.mask(e)[:150])
+            log.warning('download %s %s E%s: %s', imdb, rel['name'][:40], ep, config.mask(e)[:150])
             continue
         if first is None:
-            first = {'id': h, 'state': 'queued', 'progress': 0, 'name': r['name'], 'imdb': imdb, 'season': season, 'episode': r['episode'],
-                     'releaseId': r['id']}
+            first = {'id': h, 'state': 'queued', 'progress': 0, 'name': rel['name'], 'imdb': imdb, 'season': rel['season'],
+                     'episode': rel['episode'] if rel['episode'] is not None else ep, 'releaseId': rel['id']}
+    return first
+
+
+async def season_download(request, imdb, season, k4, dev, dry):
+    """'Download season N': the aired episodes that are missing; the newest season is also watched, so episodes that air
+    later download by themselves (watch_job)."""
+    plan = await missing_plan(imdb, season, k4)
+    newest = latest_season(imdb) == season
+    eps = sorted({e if e is not None else r['episode'] for r, e in plan if (e if e is not None else r['episode']) is not None})
+    whole = any(e is None and r['episode'] is None for r, e in plan)
+    if dry:
+        if not plan:
+            return jerr(404, 'Nu lipsește niciun episod apărut' if aired_episodes(imdb, season) else 'Nu am găsit nimic cu seederi pe FileList')
+        return jok({'ok': True, 'dryRun': True, 'download': None, 'release': release_out(plan[0][0]), 'episodes': eps, 'wholeSeason': whole,
+                    'watching': newest})
+    if newest:
+        watch(imdb, season)
+    if not plan:
+        d = next((d for d in await downloads_for(imdb) if d['season'] == season and d['state'] != 'error'), None)
+        if d or newest:
+            return jok({'ok': True, 'download': d, 'release': None, 'episodes': [], 'watching': newest,
+                        'message': 'Nu lipsește niciun episod apărut. Episoadele noi se descarcă singure.' if newest else ''})
+        return jerr(404, 'Nu am găsit nimic cu seederi pe FileList')
+    first = await run_plan(imdb, plan, dev)
     if first is None:
         return jerr(502, 'qBittorrent nu a acceptat descărcările')
-    return jok({'ok': True, 'download': first, 'release': release_out(picks[0]), 'episodes': [r['episode'] for r in picks]})
+    return jok({'ok': True, 'download': first, 'release': release_out(plan[0][0]), 'episodes': eps, 'wholeSeason': whole, 'watching': newest})
+
+
+async def watch_job():
+    """Every 2 h: for watched series, fetch new releases and download episodes that aired since."""
+    if not configured():
+        return
+    from . import extra
+    k4 = extra.settings().get('dlQuality') == '4k'
+    for w in db.q('SELECT * FROM watch'):
+        imdb = w['imdb']
+        try:
+            await refresh(imdb, force=True)
+            async with aiohttp.ClientSession() as s_:
+                await library.ensure_title(s_, imdb, '', None, 'series')  # fresh air dates
+            for season in sorted({w['season']} | {x for x in [latest_season(imdb)] if x and x >= w['season']}):
+                plan = await missing_plan(imdb, season, k4)
+                if plan:
+                    log.info('watch %s S%d: %d new', imdb, season, len(plan))
+                    await run_plan(imdb, plan, None)
+            db.x('UPDATE watch SET last_check=? WHERE imdb=?', (db.now(), imdb))
+        except Exception as e:
+            log.warning('watch %s: %s', imdb, config.mask(e)[:150])
+        await asyncio.sleep(2)
 
 
 _dl_rate = {}
