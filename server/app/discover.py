@@ -171,7 +171,7 @@ async def kids_pool(typ, session=None):
         lists.append(ids)
     out = []
     from . import tmdb
-    tk = await tmdb.kids_lists()
+    tk = tmdb.kids_cached()
     for i in tk.get(typ) or []:  # what kids watch right now (TMDB), already age-filtered
         if i not in out:
             out.append(i)
@@ -248,7 +248,11 @@ async def warm():
                 seen.add(key)
                 await row_ids(kind, t, g, s)
                 await asyncio.sleep(0.3)
-    from . import cert
+    from . import cert, tmdb
+    try:
+        await tmdb.kids_lists()
+    except Exception as e:
+        log.info('tmdb kids: %s', str(e)[:120])
     ids = []
     for typ in ('series', 'movie'):
         ids += await kids_pool(typ)

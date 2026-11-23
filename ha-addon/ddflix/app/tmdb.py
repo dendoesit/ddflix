@@ -89,16 +89,18 @@ async def imdb_of(s, kind, tid):
     return (d or {}).get('imdb_id') or None
 
 
-async def kids_lists():
-    """Popular kids titles right now (TMDB discover), as IMDb ids, cached 12 h: series = TMDB 'Kids' genre, movies = rated
-    G/PG animation or family released since 2008."""
+def kids_cached():
+    """Never blocks a request: whatever the background job built last."""
     hit = db.get_setting('tmdb:kids')
-    if hit:
-        v = json.loads(hit)
-        if time.time() - v.get('at', 0) < 12 * 3600:
-            return v
-    if not configured():
-        return {'series': [], 'movie': [], 'at': 0}
+    return json.loads(hit) if hit else {'series': [], 'movie': [], 'at': 0}
+
+
+async def kids_lists():
+    """Background job: popular kids titles right now (TMDB discover), as IMDb ids, rebuilt every 12 h: series = TMDB 'Kids'
+    genre, movies = rated G/PG animation or family released since 2008."""
+    v = kids_cached()
+    if time.time() - v.get('at', 0) < 12 * 3600 or not configured():
+        return v
     out = {'series': [], 'movie': [], 'at': time.time()}
     async with aiohttp.ClientSession() as s:
         for page in (1, 2, 3, 4):
