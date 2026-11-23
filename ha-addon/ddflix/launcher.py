@@ -21,6 +21,7 @@ env.update({
     'FILELIST_RSS_URL': opts.get('filelist_rss_url') or '',
     'RSS_MODE': opts.get('rss_mode') or 'follow',
     'WEB_PASSWORD': opts.get('web_password') or '',
+    'TMDB_API_KEY': opts.get('tmdb_key') or '',
     'WEB_URL': opts.get('web_url') or 'http://192.168.1.156:8090',
     'LAN_CIDR': lan + ',172.30.32.0/23',
 })

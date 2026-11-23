@@ -143,12 +143,22 @@ def kids_rows(typ=None):
     if M:
         rows += [('kids_fam_movie', 'Filme pentru toată familia', 'kids', 'movie', 'Family'),
                  ('kids_best_movie', 'Cele mai iubite filme', 'kidsbest', 'movie', None)]
+    if S:
+        rows.append(('kids_classic_series', 'Desene clasice', 'kidsclassic', 'series', None))
+    if M:
+        rows.append(('kids_classic_movie', 'Filme clasice pentru copii', 'kidsclassic', 'movie', None))
     for t, g, label in (('movie', 'Adventure', 'Filme de aventură'), ('series', 'Adventure', 'Aventuri'), ('movie', 'Comedy', 'Filme de comedie'),
                         ('movie', 'Fantasy', 'Basme și fantasy'), ('series', 'Comedy', 'Seriale amuzante'), ('movie', 'Musical', 'Muzicale'),
                         ('series', 'Documentary', 'Documentare despre natură și lume')):
         if typ in (None, t):
             rows.append(('kids_%s_%s' % (g.lower(), t), label, 'kids', t, g))
     return rows
+
+
+async def _recent(typ, session=None):
+    ids = await kids_pool(typ, session)
+    yrs = {r['imdb']: r['year'] or 0 for r in db.q('SELECT imdb, year FROM title WHERE imdb IN (%s)' % ','.join('?' * len(ids)), ids)} if ids else {}
+    return [i for i in ids if yrs.get(i, 0) >= 2010]
 
 
 async def kids_pool(typ, session=None):
@@ -160,11 +170,19 @@ async def kids_pool(typ, session=None):
             ids += [i for i in await catalog(typ, 'top', g, skip, session) if i not in ids]
         lists.append(ids)
     out = []
+    from . import tmdb
+    tk = await tmdb.kids_lists()
+    for i in tk.get(typ) or []:  # what kids watch right now (TMDB), already age-filtered
+        if i not in out:
+            out.append(i)
     for k in range(max(len(x) for x in lists)):
         for x in lists:
             if k < len(x) and x[k] not in out:
                 out.append(x[k])
-    return out
+    # newest first (kids expect today's cartoons), keeping popularity order inside each era; pre-2000 goes to "Clasice"
+    yrs = {r['imdb']: r['year'] or 0 for r in db.q('SELECT imdb, year FROM title WHERE imdb IN (%s)' % ','.join('?' * len(out)), out)} if out else {}
+    era = lambda i: 0 if yrs.get(i, 0) >= 2015 else 1 if yrs.get(i, 0) >= 2005 else 2 if yrs.get(i, 0) >= 2000 else 3
+    return sorted(out, key=lambda i: era(i))
 
 
 async def pool(typ, session=None):
@@ -180,13 +198,18 @@ async def pool(typ, session=None):
 async def row_ids(kind, typ, genre=None, session=None):
     if kind == 'genre':
         return await catalog(typ, 'top', genre, 0, session)
-    if kind == 'kids':  # several pages: the kids filter drops a lot
+    if kind == 'kids':  # several pages: the kids filter drops a lot; newest first
         out = []
         for skip in (0, 50, 100, 150, 200, 250):
             out += [i for i in await catalog(typ, 'top', genre, skip, session) if i not in out]
-        return out
+        yrs = {r['imdb']: r['year'] or 0 for r in db.q('SELECT imdb, year FROM title WHERE imdb IN (%s)' % ','.join('?' * len(out)), out)} if out else {}
+        return sorted(out, key=lambda i: 0 if yrs.get(i, 0) >= 2012 else 1 if yrs.get(i, 0) >= 2000 else 2)
     if kind == 'kidstop':
-        return await kids_pool(typ, session)
+        return [i for i in await kids_pool(typ, session) if i in set(await _recent(typ, session))]
+    if kind == 'kidsclassic':
+        ids = await kids_pool(typ, session)
+        yrs = {r['imdb']: r['year'] or 0 for r in db.q('SELECT imdb, year FROM title WHERE imdb IN (%s)' % ','.join('?' * len(ids)), ids)} if ids else {}
+        return [i for i in ids if 0 < yrs.get(i, 0) < 2000]
     if kind in ('kidsnew', 'kidsbest'):
         ids = await kids_pool(typ, session)
         meta = {r['imdb']: r for r in db.q('SELECT imdb, year, imdb_rating FROM title WHERE imdb IN (%s)' % ','.join('?' * len(ids)), ids)} if ids else {}

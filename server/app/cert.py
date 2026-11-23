@@ -96,7 +96,23 @@ async def enrich(ids):
                     list(ids) + [db.now() - 30 * 86400])
         mv = [r['imdb'] for r in rows if r['type'] == 'movie' and r['imdb'].startswith('tt')]
         sr = [r['imdb'] for r in rows if r['type'] == 'series' and r['imdb'].startswith('tt')]
+        from . import tmdb
         async with aiohttp.ClientSession() as s:
+            if tmdb.configured():
+                left_m, left_s = [], []
+                for i in mv + sr:
+                    typ = 'movie' if i in mv else 'series'
+                    try:
+                        found, age = await tmdb.cert_for(s, i, typ)
+                    except Exception as e:
+                        log.info('tmdb %s: %s', i, str(e)[:100])
+                        found, age = False, None
+                    if age is not None:
+                        db.x('UPDATE title SET cert_age=?, cert_src=?, cert_at=? WHERE imdb=?', (age, 'tmdb', db.now(), i))
+                    else:
+                        (left_m if typ == 'movie' else left_s).append(i)
+                    await asyncio.sleep(0.05)
+                mv, sr = left_m, left_s
             for k in range(0, len(mv), 50):
                 try:
                     await movies(s, mv[k:k + 50])
