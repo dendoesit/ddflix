@@ -63,6 +63,8 @@ PUBLIC_PORT = env_int('PUBLIC_PORT', 8091)
 DIRECT_PORT = env_int('DIRECT_PORT', 8443)
 SSL_CERT = env('SSL_CERT', '/ssl/fullchain.pem')
 SSL_KEY = env('SSL_KEY', '/ssl/privkey.pem')
+# tell browsers to use the direct port only when it is reachable from the internet (not behind the ISP's CGNAT)
+DIRECT_ADVERTISE = env('DIRECT_ADVERTISE') == '1'
 WEB_PASSWORD = env('WEB_PASSWORD')
 WEB_ORIGINS = [o.strip().rstrip('/') for o in env('WEB_ORIGINS', '').split(',') if o.strip()]
 
