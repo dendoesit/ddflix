@@ -194,10 +194,7 @@ async def start_download(rel, device_id=None, episode=None):
         h = torrent_hash(data)
         q = rss.Qbt(s)
         await q.prepare()
-        one = episode is not None and rel['episode'] is None
-    if season is not None and episode is None and rel['episode'] is not None:
-        # "download season N" while the season is still airing: FileList has no pack yet, only episodes -> get them all
-        return await season_from_episodes(request, imdb, int(season), k4, dev, b.get('dryRun')) and rel['season'] is not None
+        one = episode is not None and rel['episode'] is None and rel['season'] is not None
         existing = {t.get('hash') for t in await q.list()}
         if h in existing:
             if one:
@@ -267,6 +264,9 @@ async def tv_download(request):
         rel = pick(imdb, int(season), episode, k4) or pick(imdb, int(season), None, k4)  # FileList usually only keeps the season pack
     else:
         rel = pick(imdb, int(season) if season is not None else None, None, k4)
+    if season is not None and episode is None and (rel is None or rel['episode'] is not None):
+        # "download season N" while the season is still airing: FileList has no pack yet, only episodes -> get them all
+        return await season_from_episodes(request, imdb, int(season), k4, dev, b.get('dryRun'))
     if not rel:
         return jerr(404, 'Nu am găsit nimic cu seederi pe FileList')
     one = episode is not None and rel['episode'] is None
