@@ -24,6 +24,7 @@ env.update({
     'TMDB_API_KEY': opts.get('tmdb_key') or '',
     'WEB_URL': opts.get('web_url') or 'http://192.168.1.156:8090',
     'LAN_CIDR': lan + ',172.30.32.0/23',
+    'MAX_TRANSCODES': os.environ.get('MAX_TRANSCODES', '1'),  # HA Green: 4 small ARM cores
 })
 
 # qBittorrent: profile in /data/qbt, no password for localhost/LAN, legal notice accepted, saves to the NAS

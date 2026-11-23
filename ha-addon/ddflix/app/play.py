@@ -21,6 +21,11 @@ TV_AUDIO = {'aac', 'ac3', 'eac3', 'mp3', 'mp2', 'opus', 'vorbis', 'flac'}
 CT = {'.mkv': 'video/x-matroska', '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm', '.avi': 'video/x-msvideo',
       '.ts': 'video/mp2t', '.mov': 'video/quicktime'}
 SESS = {}
+ACTIVE = {'at': 0}  # last time a video byte / segment was served (background jobs pause while someone watches)
+
+
+def busy():
+    return time.time() - ACTIVE['at'] < 180
 TRANSCODES = asyncio.Semaphore(config.MAX_TRANSCODES)
 SEG_T = 4.0  # transcode segment length
 
@@ -278,6 +283,7 @@ def web_gc():
 
 
 async def web_file(request):
+    ACTIVE['at'] = time.time()
     w = WEB.get(request.match_info['sid'])
     fn = request.match_info['file']
     if not w or '/' in fn or '..' in fn:
@@ -399,6 +405,7 @@ def text_resp(request, txt, ct):
 
 
 async def hls(request):
+    ACTIVE['at'] = time.time()
     sid, fn = request.match_info['sid'], request.match_info['file']
     s = SESS.get(sid)
     if not s:
@@ -605,6 +612,7 @@ class Remux:
 
 
 async def media_file_resp(request):
+    ACTIVE['at'] = time.time()
     f = media_file(int(request.match_info['mid']))
     if not f or not allowed_imdb(request, f['imdb']):
         return jerr(404, 'media not found')

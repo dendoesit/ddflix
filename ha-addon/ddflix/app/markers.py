@@ -236,8 +236,9 @@ async def job():
         return
     _busy['on'] = True
     try:
+        from . import play
         t0 = time.time()
-        while time.time() - t0 < 1500:
+        while time.time() - t0 < 1500 and not play.busy():
             f = db.q1('SELECT * FROM media_file m WHERE missing=0 AND season IS NOT NULL AND duration > 300 AND NOT EXISTS '
                       '(SELECT 1 FROM marker k WHERE k.media_id=m.id AND k.v=?) ORDER BY added_at DESC LIMIT 1', (V,))
             if f:

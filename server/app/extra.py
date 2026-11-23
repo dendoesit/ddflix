@@ -17,6 +17,7 @@ TRAILER_CAP = int(os.environ.get('TRAILER_CACHE_MB', '3000')) * 1024 * 1024
 _jobs = {}        # imdb -> {'state': 'downloading'|'queued'|'failed', 'at': t}
 _queue = asyncio.Queue()
 _worker = {'task': None}
+_front = {}
 
 
 def _path(imdb):
@@ -94,8 +95,12 @@ async def _fetch(imdb):
 
 
 async def _run_worker():
+    from . import play
     while True:
         imdb = await _queue.get()
+        while play.busy() and _jobs.get(imdb, {}).get('state') == 'queued' and not _front.get(imdb):
+            await asyncio.sleep(30)  # background trailers wait while someone watches; ones a user asked for go now
+        _front.pop(imdb, None)
         try:
             await _fetch(imdb)
         except Exception as e:
@@ -114,6 +119,7 @@ def want(imdb, front=False):
     if _worker['task'] is None or _worker['task'].done():
         _worker['task'] = asyncio.ensure_future(_run_worker())
     if front:
+        _front[imdb] = True
         items = []
         while not _queue.empty():
             items.append(_queue.get_nowait())

@@ -185,7 +185,19 @@ async def _recent(typ, session=None):
     return [i for i in ids if yrs.get(i, 0) >= 2010]
 
 
+_kp = {}
+
+
 async def kids_pool(typ, session=None):
+    hit = _kp.get(typ)
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    out = await _kids_pool(typ, session)
+    _kp[typ] = (time.time(), out)
+    return out
+
+
+async def _kids_pool(typ, session=None):
     """Popular animation + family titles (6 pages each), interleaved in popularity order."""
     lists = []
     for g in ('Animation', 'Family'):
@@ -229,7 +241,8 @@ async def row_ids(kind, typ, genre=None, session=None):
         yrs = {r['imdb']: r['year'] or 0 for r in db.q('SELECT imdb, year FROM title WHERE imdb IN (%s)' % ','.join('?' * len(out)), out)} if out else {}
         return sorted(out, key=lambda i: 0 if yrs.get(i, 0) >= 2012 else 1 if yrs.get(i, 0) >= 2000 else 2)
     if kind == 'kidstop':
-        return [i for i in await kids_pool(typ, session) if i in set(await _recent(typ, session))]
+        recent = set(await _recent(typ, session))
+        return [i for i in await kids_pool(typ, session) if i in recent]
     if kind == 'kidsclassic':
         ids = await kids_pool(typ, session)
         yrs = {r['imdb']: r['year'] or 0 for r in db.q('SELECT imdb, year FROM title WHERE imdb IN (%s)' % ','.join('?' * len(ids)), ids)} if ids else {}
@@ -373,9 +386,14 @@ async def rebuild():
 
 
 async def ratings_job():
-    await _download('title.ratings.tsv.gz')
-    await _download('title.episode.tsv.gz')
+    a = await _download('title.ratings.tsv.gz')
+    b = await _download('title.episode.tsv.gz')
+    stamp = '%d:%d:%d' % (int(os.path.getmtime(a)), int(os.path.getmtime(b)),
+                          db.q1("SELECT COUNT(*) n FROM title WHERE type='series' AND imdb LIKE 'tt%'")['n'] // 25)
+    if db.get_setting('imdb_built') == stamp:
+        return
     await rebuild()
+    db.set_setting('imdb_built', stamp)
 
 
 def want_series(imdb):

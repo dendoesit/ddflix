@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS media_file(id INTEGER PRIMARY KEY, path TEXT UNIQUE, 
   duration REAL, width INTEGER, height INTEGER, hdr TEXT, vcodec TEXT, size INTEGER, mtime REAL, added_at INTEGER,
   missing INTEGER DEFAULT 0, probe TEXT, ext_subs TEXT DEFAULT '[]', kf TEXT, pname TEXT, pyear INTEGER, ptype TEXT);
 CREATE INDEX IF NOT EXISTS media_imdb ON media_file(imdb);
+CREATE INDEX IF NOT EXISTS media_added ON media_file(missing, added_at);
+CREATE INDEX IF NOT EXISTS title_type ON title(type);
 CREATE TABLE IF NOT EXISTS progress(profile_id INTEGER, media_id INTEGER, position REAL, duration REAL, watched INTEGER DEFAULT 0,
   audio_n INTEGER, sub_key TEXT, updated_at INTEGER, PRIMARY KEY(profile_id, media_id));
 CREATE TABLE IF NOT EXISTS mylist(profile_id INTEGER, imdb TEXT, added_at INTEGER, PRIMARY KEY(profile_id, imdb));
@@ -36,6 +38,7 @@ CREATE TABLE IF NOT EXISTS release(id INTEGER PRIMARY KEY, imdb TEXT, name TEXT,
   category TEXT, freeleech INTEGER, season INTEGER, episode INTEGER, pack INTEGER, res TEXT, hdr TEXT, codec TEXT, audio TEXT, source TEXT,
   uploaded TEXT, fetched_at INTEGER);
 CREATE INDEX IF NOT EXISTS release_imdb ON release(imdb);
+CREATE INDEX IF NOT EXISTS progress_recent ON progress(profile_id, updated_at);
 CREATE TABLE IF NOT EXISTS download(hash TEXT PRIMARY KEY, release_id INTEGER, imdb TEXT, season INTEGER, episode INTEGER, name TEXT,
   device_id INTEGER, added_at INTEGER);
 CREATE TABLE IF NOT EXISTS play_event(id INTEGER PRIMARY KEY, at INTEGER, media_id INTEGER, kind TEXT, mode TEXT, detail TEXT);

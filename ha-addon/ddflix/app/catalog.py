@@ -12,8 +12,20 @@ KIDS_GENRES = {'Animation', 'Family', 'Kids'}
 RO = {'rum', 'ron', 'ro', 'romanian'}
 
 
+_lib = {'key': None, 'agg': None}
+
+
 def library_titles():
-    """imdb -> aggregated info over the files present on disk."""
+    """imdb -> aggregated info over the files present on disk (cached until a file is added / removed / re-probed)."""
+    k = tuple(db.q1('SELECT COUNT(*) n, COALESCE(MAX(id), 0) m, COALESCE(SUM(missing), 0) x, COALESCE(MAX(mtime), 0) t FROM media_file'))
+    if _lib['key'] == k and _lib['agg'] is not None:
+        return _lib['agg']
+    agg = _library_titles()
+    _lib.update(key=k, agg=agg)
+    return agg
+
+
+def _library_titles():
     agg = {}
     for f in db.q('SELECT id, imdb, width, hdr, added_at, probe, ext_subs, season FROM media_file WHERE missing=0'):
         a = agg.setdefault(f['imdb'], {'w': 0, 'hdr': None, 'added': 0, 'first': 0, 'rosub': False, 'ro': False, 'n': 0, 'seasons': set(),
