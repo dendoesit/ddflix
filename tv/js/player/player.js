@@ -488,6 +488,7 @@
   }
   P.open = function (mediaId, o, chained) {
     o = o || {};
+    if (BF.dialog && BF.dialog.isOpen()) BF.dialog.close();  // a dialog left open would swallow every remote key while the film plays
     box = box || document.getElementById('player'); ui = ui || document.getElementById('pui'); subEl = subEl || document.getElementById('psub');
     if (P.st && !chained) P.close(true);
     if (!chained || !ui.firstChild) buildUi();

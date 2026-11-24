@@ -7,6 +7,7 @@ Run these after every change, before saying it works.
 | Server end-to-end, real server (home, titles, pictures, search, playback direct/HLS/web, subtitles, seek thumbnails, kids rules, TV device path, web deploy drift, public route) | `python tests/live_check.py` (`--quick` skips playback and the public-route speed) | PC on the home network |
 | TV app unit tests (layout, state machine, i18n, ...) | `node tv/test/run.js` | Node |
 | TV app on a real TV: search a series, open it, play, seek +30 / -60 / hold forward / hold back, close (restores the watch position) | `node tv/tools/cdp.js launch` then `node tv/tools/flowtest.js dexter` with `TV=<ip>:26101` | the TV on, DDflix not in use |
+| TV, a title that is still downloading: hold right far past the downloaded part -> seeking stops at the limit with a message, playback goes on, no reopen loop | `node tv/tools/dlseektest.js <mediaId>` (a `live` row from `/api/admin/diag`) | as above + a running download |
 | TV search typing (simulated remote) | `node tv/tools/searchtest.js frozen peanuts` | as above |
 | TV home scroll smoothness | `node tv/tools/scrollperf.js`, `node tv/tools/focusperf.js` | as above |
 
