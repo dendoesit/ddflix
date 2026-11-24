@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import sys
 
 opts = {}
 try:
@@ -46,11 +47,48 @@ if not os.path.exists(conf):
     with open(conf, 'w') as f:
         f.write(chr(10).join(lines))
 
-# separate supervisor process (survives the exec below; a thread would not)
-subprocess.Popen(['sh', '-c', 'while true; do qbittorrent-nox --profile=/data/qbt --webui-port=8080; sleep 5; done'],
-                 env=env, stdin=subprocess.DEVNULL)
+# The launcher stays PID 1 and shuts everything down cleanly: qBittorrent must get SIGTERM and time to write its resume
+# data, otherwise after every add-on restart it believes the running downloads are back at their last save (hours of
+# progress lost and downloaded again; a title being watched while downloading suddenly has nothing on disk).
+import signal
+import time
+
+STOP = {'now': False}
+# qBittorrent restarted if it ever exits (own process group so it can be stopped as a whole)
+qbt = subprocess.Popen(['sh', '-c', 'trap "kill -TERM $child; wait $child; exit 0" TERM; while true; do '
+                        'qbittorrent-nox --profile=/data/qbt --webui-port=8080 & child=$!; wait $child; sleep 5; done'],
+                       env=env, stdin=subprocess.DEVNULL, start_new_session=True)
+procs = [qbt]
 # remote access (Tailscale Funnel) for the web app outside home; a separate supervised process
 if opts.get('remote_access', True):
-    subprocess.Popen(['python', '/remote.py'], env=env, stdin=subprocess.DEVNULL)
-os.chdir('/app')
-os.execvpe('python', ['python', '-m', 'app.main'], env)
+    procs.append(subprocess.Popen(['python', '/remote.py'], env=env, stdin=subprocess.DEVNULL, start_new_session=True))
+app = subprocess.Popen(['python', '-m', 'app.main'], env=env, cwd='/app')
+
+
+def stop(*_):
+    if STOP['now']:
+        return
+    STOP['now'] = True
+    print('[launcher] stopping: qBittorrent saves its downloads first', flush=True)
+    for p in [app] + procs[1:]:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    try:
+        os.killpg(qbt.pid, signal.SIGTERM)
+    except Exception:
+        pass
+    end = time.time() + 25
+    while time.time() < end and qbt.poll() is None:
+        time.sleep(0.5)
+    print('[launcher] qBittorrent %s' % ('stopped cleanly' if qbt.poll() is not None else 'did not stop in 25 s'), flush=True)
+    sys.exit(0)
+
+
+signal.signal(signal.SIGTERM, stop)
+signal.signal(signal.SIGINT, stop)
+while not STOP['now']:
+    if app.poll() is not None:  # the server died: let the supervisor restart the whole add-on (clean stop first)
+        stop()
+    time.sleep(1)

@@ -21,6 +21,7 @@ WAIT_MAX = 120                  # a request waits this long for missing pieces, 
 _cache = {}                     # hash -> (time, info)
 _schema = {'ok': False}
 _tuned = set()
+_prefs = {'ok': False}
 
 
 def schema():
@@ -170,6 +171,12 @@ async def throttle():
 async def job():
     """Every few seconds: offer episodes of running downloads as soon as their start is on disk; retire finished/cancelled ones."""
     schema()
+    if not _prefs['ok']:  # qBittorrent keeps its resume data fresh (default: hourly -> a crash/restart re-downloads up to an hour)
+        try:
+            await _q(lambda q: q.call('POST', 'app/setPreferences', data={'json': json.dumps({'save_resume_data_interval': 1})}))
+            _prefs['ok'] = True
+        except Exception as e:
+            log.info('qbt prefs: %s', config.mask(e)[:120])
     await throttle()
     try:
         ts = await _q(lambda q: q.list())
