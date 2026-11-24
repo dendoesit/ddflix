@@ -271,7 +271,7 @@ async def serve(request, f):
     resp = web.StreamResponse(status=206 if partial else 200, headers=hdr)
     try:
         await resp.prepare(request)
-    except (ConnectionResetError, aiohttp.ClientConnectionResetError):
+    except (ConnectionError, aiohttp.ClientConnectionResetError):
         return resp  # the player gave up before the headers went out
     if request.method == 'HEAD':
         return resp
@@ -319,6 +319,6 @@ async def _pump(request, resp, f, h, fi, start, end, read, loop):
         play.ACTIVE['at'] = WATCH[h] = time.time()
         try:
             await resp.write(data)
-        except (ConnectionResetError, aiohttp.ClientConnectionResetError):
+        except (ConnectionError, aiohttp.ClientConnectionResetError):
             return  # the player went away / seeked
         pos += len(data)
