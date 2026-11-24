@@ -99,6 +99,7 @@
   // pending seek with acceleration
   function seekBy(dir, base) {
     var st = P.st, now = Date.now();
+    C.zone = 'timeline';  // seeking keeps the focus on the timeline: the next left/right seek too (not move between buttons)
     if (C.pend == null) { C.pend = st.pos; C.holdStart = now; }
     if (now - C.lastSeekKey > 450) C.holdStart = now;
     C.lastSeekKey = now;

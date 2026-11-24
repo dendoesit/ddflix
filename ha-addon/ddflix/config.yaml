@@ -1,5 +1,5 @@
 name: DDflix
-version: "1.17.6"
+version: "1.17.7"
 slug: ddflix
 description: Netflix local - seriale/filme de pe NAS, căutare + descărcare FileList, qBittorrent inclus
 url: https://github.com/dendoesit/ddflix

@@ -693,6 +693,8 @@
       if (m.subsPending) watchSubs(st);
       document.getElementById('pdur').textContent = fmtT(m.duration);
       P.el.hidden = false;
+      if (!(history.state && history.state.ddPlayer)) history.pushState({ ddPlayer: 1 }, '');
+      [].forEach.call(document.querySelectorAll('video.htr'), function (x) { x.pause(); });  // the hero trailer must not keep streaming behind the film
       start_(start != null ? start : (m.position > 30 && !m.watched ? m.position - 3 : 0), st.audio);
     }, function (e) { toast(e.message); });
   }
@@ -854,13 +856,16 @@
   setInterval(function () {
     if (P.st && !P.el.hidden && !P.v.paused) q('/api/progress', { body: { mediaId: P.st.mid, position: curPos(), duration: P.st.m.duration, sub: P.st.sub || null, subManual: !!P.st.manual, audio: P.st.audio } }).catch(function () {});
   }, 10000);
-  document.getElementById('pclose').onclick = function () {
+  // the player is a history step: the phone's / browser's Back closes it (instead of leaving the film playing behind the page)
+  function closePlayer() {
     var st = P.st; if (!st) return;
     q('/api/progress', { body: { mediaId: st.mid, position: curPos(), duration: st.m.duration, sub: st.sub || null, subManual: !!st.manual } }).catch(function () {});
     if (st.sid) q('/api/play/' + st.sid, { method: 'DELETE' }).catch(function () {});
     if (P.hls) { P.hls.destroy(); P.hls = null; }
     P.v.pause(); P.v.removeAttribute('src'); P.v.load(); P.el.hidden = true; P.st = null; skipB.hidden = true; nextC.hidden = true; thumb.hidden = true; route();
-  };
+  }
+  document.getElementById('pclose').onclick = function () { if (history.state && history.state.ddPlayer) history.back(); else closePlayer(); };
+  window.addEventListener('popstate', function () { if (P.st && !P.el.hidden) closePlayer(); });
 
   function fail(e) { app.innerHTML = '<p class="pad err">' + esc(e.message) + '</p>'; }
   function route() {
