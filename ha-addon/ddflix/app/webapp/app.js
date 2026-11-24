@@ -121,7 +121,7 @@
   function card(c) {
     var a = document.createElement('a'); a.className = 'card'; a.href = '#/t/' + encodeURIComponent(c.imdb);
     var pct = c.play && c.play.pct ? c.play.pct : c.progress && c.progress.pct;
-    a.innerHTML = (c.rank ? '<span class="rkn">' + c.rank + '</span><div class="rkb">' : '') + '<div class="pw">' + (c.poster ? '<img loading="lazy" alt="" src="' + img('poster', c.imdb, 300) + '">' : '<div class="ph">' + esc(c.name) + '</div>') +
+    a.innerHTML = (c.rank ? '<span class="rkn">' + c.rank + '</span><div class="rkb">' : '') + '<div class="pw">' + (c.poster ? '<img loading="lazy" alt="" src="' + img('poster', c.imdb, 300) + '" onerror="this.nextSibling.hidden=false;this.remove()"><div class="ph" hidden>' + esc(c.name) + '</div>' : '<div class="ph">' + esc(c.name) + '</div>') +
       (c.backdrop && !c.rank ? '<img class="bd" alt="" data-src="' + img('backdrop', c.imdb, 780) + '"><div class="bdn">' + esc(c.name) + '</div>' : '') +
       (c.inLibrary ? '<span class="nas">NAS</span>' : '') + score(c.rating) +
       (pct ? '<div class="bar"><i style="width:' + Math.round(pct * 100) + '%"></i></div>' : '') + '</div>' +

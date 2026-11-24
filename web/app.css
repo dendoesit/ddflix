@@ -216,3 +216,4 @@ input.q{width:100%;font:500 18px var(--font);padding:14px 18px;border-radius:999
 .dg-bar{height:6px;border-radius:3px;background:#ffffff1f;overflow:hidden;margin-bottom:5px}.dg-bar i{display:block;height:100%;background:var(--acc)}
 .dg-h3{margin:16px 0 4px;font:700 15px var(--font)}
 .dg-p{padding:8px 0;border-top:1px solid var(--line);font-size:13px;word-break:break-word}.dg-e{margin:0 0 8px}
+.card .ph[hidden]{display:none}

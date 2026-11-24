@@ -437,10 +437,13 @@ async def live_titles(session, q):
         for m in (d.get('metas') or [])[:10]:
             if str(m.get('id', '')).startswith('tt'):
                 out.append((m['id'], typ, m.get('name'), m.get('releaseInfo')))
-    for imdb, typ, name, yr in out[:16]:
+    for imdb, typ, name, yr in out:
         ym = re.match(r'(\d{4})', str(yr or ''))
         await library.ensure_title(session, imdb, name, int(ym.group(1)) if ym else None, typ)
-    return [x[0] for x in out[:16]]
+    # only titles that really have a poster (obscure ones without art showed up as broken pictures); misses are cached
+    ids = [x[0] for x in out]
+    got = await asyncio.gather(*[asyncio.wait_for(library.image_path('poster', i), 10) for i in ids], return_exceptions=True)
+    return [i for i, g in zip(ids, got) if isinstance(g, str)][:16]
 
 
 def routes(app):
