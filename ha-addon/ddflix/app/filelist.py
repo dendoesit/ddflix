@@ -245,14 +245,17 @@ async def tv_download(request):
     if not configured():
         return jerr(503, 'FileList nu e configurat (FILELIST_USER în .env)')
     p = request['profile']
-    if p and p['kind'] == 'kids':
-        return jerr(403, 'not available on a kids profile')
     b = await body(request)
     imdb = str(b.get('imdb') or '')
     dev = request['device']
     if dev and rss_limited(dev['id']):
         return jerr(429, 'Prea multe descărcări în ultima oră')
     await refresh(imdb)
+    if p and p['kind'] == 'kids':  # kids download whatever their profile may watch (same age rules as the catalogue)
+        from . import catalog
+        tr = db.q1('SELECT * FROM title WHERE imdb=?', (imdb,))
+        if not tr or not catalog.allowed(p, tr):
+            return jerr(403, 'Titlul nu e potrivit pentru profilul de copii')
     t = db.q1('SELECT type FROM title WHERE imdb=?', (imdb,))
     season = b.get('season')
     if season is not None and t and t['type'] == 'movie':

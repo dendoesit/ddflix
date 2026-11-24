@@ -261,14 +261,10 @@ async def stream_info(request):
 
 # ---------------- download control (web only; devices -> 403 in the guard)
 async def downloads_add(request):
-    if kids(request):
-        return jerr(403, 'not available on a kids profile')
-    return await filelist.tv_download(request)
+    return await filelist.tv_download(request)  # kids: checked there against what the profile may watch
 
 
 async def downloads_action(request):
-    if kids(request):
-        return jerr(403, 'not available on a kids profile')
     h, act = request.match_info['id'], request.match_info['action']
     path = {'pause': 'torrents/pause', 'resume': 'torrents/resume', 'recheck': 'torrents/recheck'}.get(act)
     if not path:

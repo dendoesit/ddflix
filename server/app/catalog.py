@@ -386,7 +386,7 @@ async def search(request):
                 if qs in library.norm(c) and {'name': c} not in people:
                     people.append({'name': c})
     out = {'titles': [card(t, agg[t['imdb']]) for _, t in hits[:60]], 'people': people[:10], 'filters': {}}
-    if request.path.endswith('/live') and qs and not (p and p['kind'] == 'kids'):
+    if request.path.endswith('/live') and qs:
         import aiohttp
         async with aiohttp.ClientSession() as s_:
             ids = await filelist.live_titles(s_, request.query.get('q') or '')

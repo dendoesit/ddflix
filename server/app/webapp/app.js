@@ -405,7 +405,7 @@
   }
   function dlPoll(now) {
     clearTimeout(DL.t);
-    if (!TOKEN || !PROF || PROF.kind === 'kids') return;
+    if (!TOKEN || !PROF) return;
     q('/api/downloads').then(function (d) {
       var items = d.items || [], active = items.filter(function (x) { return x.state !== 'done' && x.state !== 'error'; });
       if (DL.seen) items.forEach(function (x) { if (x.state === 'done' && DL.seen[x.id] && DL.seen[x.id] !== 'done') toast('✓ Gata de vizionat: ' + x.name); });
@@ -872,7 +872,6 @@
     if (!PROF || parts[0] === 'profiles') return profilesView(false);
     if (LS.get('dd_paircode') && parts[0].split('?')[0] !== 'settings') { var c0 = LS.get('dd_paircode'); location.hash = '#/settings?code=' + c0; return; }
     var me = document.getElementById('me'); me.innerHTML = avatar(PROF); me.title = PROF.name + ' · schimbă profilul';
-    document.getElementById('dl-tab').hidden = PROF.kind === 'kids';
     document.getElementById('set-tab').hidden = PROF.kind === 'kids';
     document.body.classList.toggle('kids', PROF.kind === 'kids');
     if (!DL.t) dlPoll();
