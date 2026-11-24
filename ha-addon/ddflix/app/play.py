@@ -653,6 +653,17 @@ class Remux:
         return None
 
 
+async def media_avail(request):
+    """How much of a still-downloading file can be played (the TV polls it while playing to limit seeking)."""
+    f = media_file(int(request.match_info['mid']))
+    if not f or not allowed_imdb(request, f['imdb']):
+        return jerr(404, 'media not found')
+    if not f['live']:
+        return jok({'downloading': False, 'availableSec': f['duration']})
+    from . import live
+    return jok({'downloading': True, 'availableSec': await live.available(f)})
+
+
 async def media_file_resp(request):
     ACTIVE['at'] = time.time()
     f = media_file(int(request.match_info['mid']))
@@ -815,6 +826,7 @@ def routes(app):
     r.add_get('/api/playable/{imdb}', playable)
     r.add_get('/api/media/{mid:\\d+}', media)
     r.add_get('/api/media/{mid:\\d+}/file', media_file_resp)
+    r.add_get('/api/media/{mid:\\d+}/avail', media_avail)
     r.add_get('/api/media/{mid:\\d+}/sub/{key}.vtt', sub)
     r.add_post('/api/play', play)
     r.add_post('/api/play/event', play_event)

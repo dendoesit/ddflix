@@ -67,6 +67,8 @@
     var dur = st.duration || 0, pos = C.pend != null ? C.pend : st.pos;
     var pct = dur ? Math.min(1, pos / dur) : 0;
     q('.p-fill').style.transform = 'scaleX(' + pct + ')';
+    var dl = st.m && st.m.downloading && st.avail != null && dur ? Math.min(1, st.avail / dur) : 0;  // still downloading: how far it is ready
+    q('.p-buf').style.transform = 'scaleX(' + dl + ')';
     q('.p-knob').style.transform = 'translateX(' + Math.round(pct * 1728) + 'px)' + (C.pend != null ? ' scale(1.36)' : '');
     q('.p-cur').textContent = BF.fmt.clock(pos);
     q('.p-rem').textContent = '-' + BF.fmt.clock(Math.max(0, dur - pos));
@@ -96,6 +98,25 @@
       im.src = A.mediaUrl(tp.url + s + '.jpg');
     });
   }
+  // a title that is still downloading can only be played as far as it is on disk: seeking stops there (and says so)
+  function maxSeek(st) { return st.m && st.m.downloading && st.avail != null ? Math.max(0, st.avail - 10) : (st.duration || 1e9) - 2; }
+  function limitSay(st) {
+    var now = Date.now(); if (now - (C.limitAt || 0) < 4000) return; C.limitAt = now;
+    BF.toast(BF.t('p.dlmax', { t: BF.fmt.clock(st.avail || 0) }));
+  }
+  function watchAvail(st) {
+    clearInterval(st.availT);
+    if (!st.m || !st.m.downloading) return;
+    st.availT = setInterval(function () {
+      if (P.st !== st) { clearInterval(st.availT); return; }
+      A.get('/api/media/' + st.m.id + '/avail', { retries: 0 }).then(function (d) {
+        if (P.st !== st) return;
+        st.avail = d.availableSec;
+        if (!d.downloading) { st.m.downloading = false; clearInterval(st.availT); }  // finished: the whole film can be sought
+        paint();
+      }, function () {});
+    }, 8000);
+  }
   // pending seek with acceleration
   function seekBy(dir, base) {
     var st = P.st, now = Date.now();
@@ -104,7 +125,9 @@
     if (now - C.lastSeekKey > 450) C.holdStart = now;
     C.lastSeekKey = now;
     var held = now - C.holdStart, step = base || (held > 6000 ? 180 : held > 3000 ? 60 : held > 1000 ? 30 : 10);
-    C.pend = Math.max(0, Math.min((st.duration || 1e9) - 2, C.pend + dir * step));
+    var want = C.pend + dir * step, mx = maxSeek(st);
+    if (dir > 0 && want > mx) limitSay(st);
+    C.pend = Math.max(0, Math.min(mx, want));
     show(true); paint();
     clearTimeout(C.pendT); C.pendT = setTimeout(commitSeek, 500);
   }
@@ -116,6 +139,7 @@
   function cancelSeek() { clearTimeout(C.pendT); C.pend = null; paint(); }
   function seekTo(t) {
     var st = P.st; if (!st || !eng) return;
+    if (t > maxSeek(st)) { t = maxSeek(st); limitSay(st); }
     st.pos = t; st.advAt = 0; st.stallAt = 0; st.seekAt = Date.now(); spin(true, t);
     eng.seek(t - (st.offset || 0), function () { st.advAt = Date.now(); saveProgress(); });
   }
@@ -484,6 +508,7 @@
       subStyle(m.subStyle); loadSub(ov ? ov.sub : m.defaultSub); if (m.subsPending) watchSubs(st); if (!m.trickplay) watchTrick(st, 0);
       var at = o.start != null ? o.start : (m.position > 30 && !m.watched ? Math.max(0, m.position - 3) : 0);
       // still downloading: never start past what is on disk (the player would wait forever for those bytes)
+      st.avail = m.availableSec; watchAvail(st);
       if (m.downloading && m.availableSec != null && at > m.availableSec - 20) {
         at = Math.max(0, Math.floor(m.availableSec - 60));
         BF.toast(BF.t('p.dlonly', { t: BF.fmt.clock(at) }));
@@ -514,7 +539,7 @@
     var st = P.st; if (!st) return;
     saveProgress();
     dispatch({ type: 'close' });
-    clearInterval(pingT); clearInterval(progT); clearTimeout(C.hideT); clearTimeout(C.pendT); clearTimeout(st.subT); clearTimeout(st.subW); clearTimeout(st.trickW); closeUn(false);
+    clearInterval(pingT); clearInterval(progT); clearTimeout(C.hideT); clearTimeout(C.pendT); clearTimeout(st.subT); clearTimeout(st.subW); clearTimeout(st.trickW); clearInterval(st.availT); closeUn(false);
     if (C.sheet) BF.sheets.close();
     P.st = null; eng = null; clearInterval(stallT); q('.p-spin').classList.remove('on');
     box.className = 'off'; document.body.classList.remove('av-on'); document.body.classList.remove('p-open');

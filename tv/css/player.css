@@ -79,3 +79,4 @@ body.p-open #app{visibility:hidden}
 
 .p-skip.dim{opacity:.55}.p-skip.on.foc{opacity:1}
 .p-un-bar{position:absolute;left:24px;right:24px;bottom:12px;height:8px;border-radius:4px;background:rgba(255,255,255,.25);overflow:hidden}.p-un-fill{display:block;height:8px;width:0;background:#fff;border-radius:4px}
+.p-buf{position:absolute;left:0;top:0;width:1728px;height:100%;background:#ffffff73;transform-origin:0 0;transform:scaleX(0);border-radius:3px}
