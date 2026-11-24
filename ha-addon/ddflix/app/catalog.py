@@ -473,6 +473,8 @@ async def showcase(request):
 async def img(request):
     mi = request.match_info
     kind = mi['kind']
+    if kind == 'background':  # the TV app asks for 'background' (same image as the web's 'backdrop')
+        kind = 'backdrop'
     if kind not in ('poster', 'backdrop', 'logo', 'episode'):
         return jerr(404, 'no image')
     s = int(mi['s']) if mi.get('s') else None
