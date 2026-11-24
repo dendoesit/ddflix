@@ -5,7 +5,7 @@
   var KEYS = ['a', 'ă', 'â', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'î', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 'ș', 't', 'ț', 'u', 'v', 'w', 'x', 'y', 'z', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
   var GENRES = ['Comedy', 'Action', 'Family', 'Horror', 'Documentary', 'Drama', 'Animation', 'Crime', 'Thriller', 'Sci-Fi', 'Romance'];
   BF.router.register('search', function () {
-    var U = BF.util, sec, rail, q = '', qEl, kb, sugg, grid, gridIn, head, kNodes = [], kIdx = 2, zone = 'kb', sIdx = 0, gIdx = 0, items = [], reqN = 0, deb, warmT, recs = [], suggs = [], gridTitle = '';
+    var U = BF.util, sec, rail, q = '', qEl, kb, sugg, grid, gridIn, head, kNodes = [], kIdx = 2, zone = 'kb', sIdx = 0, gIdx = 0, items = [], reqN = 0, deb, liveT, warmT, recs = [], suggs = [], gridTitle = '';
     var COLS = 6;
     function setQ(v) {
       q = v; qEl.textContent = q; qEl.appendChild(U.el('span', 'caret'));
@@ -22,13 +22,21 @@
         if (my !== reqN) return;
         var list = d.titles || d.items || [];
         BF.log('search', '"' + qq + '" ' + list.length + ' in ' + (Date.now() - t0) + 'ms p=' + A.profileId() + (String(A.profile).indexOf('.') > 0 ? '+ticket' : '-ticket'));
-        if (list.length) { show(list, BF.t('search.results', { q: qq })); return; }
-        head.textContent = BF.t('search.live'); 
-        A.searchLive(qq).then(function (d2) {
+        // what is on the NAS shows at once; FileList is ALWAYS searched too (shortly after typing stops) and its titles are
+        // appended (the server returns the local ones first, so the focused card stays the same)
+        if (list.length) show(list, BF.t('search.results', { q: qq }) + '  ·  ' + BF.t('search.live'));
+        else head.textContent = BF.t('search.live');
+        clearTimeout(liveT);
+        liveT = setTimeout(function () {
           if (my !== reqN) return;
-          var l2 = d2.titles || d2.items || [];
-          if (l2.length) show(l2, BF.t('search.results', { q: qq })); else empty(qq);
-        }, function () { if (my === reqN) empty(qq); });
+          A.searchLive(qq).then(function (d2) {
+            if (my !== reqN) return;
+            var l2 = d2.titles || d2.items || [];
+            if (l2.length) show(l2, BF.t('search.results', { q: qq }));
+            else if (list.length) head.textContent = gridTitle = BF.t('search.results', { q: qq });
+            else empty(qq);
+          }, function () { if (my !== reqN) return; if (list.length) head.textContent = gridTitle = BF.t('search.results', { q: qq }); else empty(qq); });
+        }, list.length ? 700 : 0);
       }, function (e) { if (my === reqN) { head.textContent = BF.t('x.error', { e: e.message }); items = []; U.empty(gridIn); } });
     }
     function empty(qq) { items = []; U.empty(gridIn); head.textContent = BF.t('search.none', { q: qq }); gridIn.appendChild(U.txt('div', 'g-empty', BF.t('search.hint'))); renderSugg(); }
