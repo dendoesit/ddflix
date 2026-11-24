@@ -470,6 +470,11 @@
       q('.p-sub').textContent = m.season != null ? BF.t('meta.ep', { s: m.season, e: m.episode }) + (m.episodeName ? ' · ' + m.episodeName : '') : '';
       subStyle(m.subStyle); loadSub(ov ? ov.sub : m.defaultSub); if (m.subsPending) watchSubs(st);
       var at = o.start != null ? o.start : (m.position > 30 && !m.watched ? Math.max(0, m.position - 3) : 0);
+      // still downloading: never start past what is on disk (the player would wait forever for those bytes)
+      if (m.downloading && m.availableSec != null && at > m.availableSec - 20) {
+        at = Math.max(0, Math.floor(m.availableSec - 60));
+        BF.toast(BF.t('p.dlonly', { t: BF.fmt.clock(at) }));
+      }
       st.pos = at;
       timers(); stallWatch();
       // RC4 probe: header-less direct GET (AVPlay cannot send X-Profile). 404 -> start the ladder at HLS.

@@ -195,6 +195,9 @@ async def media(request):
     from . import subs
     sp = subs.want(f)
     out = media_out(f, pr)
+    if f['live']:
+        from . import live
+        out['availableSec'] = await live.available(f)
     ep_name = None
     if f['season'] is not None and t:
         for v in db.jl(t['videos'], []) or []:
@@ -368,6 +371,9 @@ async def play(request):
         return jok({'mode': 'direct', 'url': '/api/media/%d/file' % f['id'], 'start': start, 'offset': 0, 'duration': dur, 'plan': pl})
     if pl['mode'] == 'remux':
         segs = db.jl(f['kf'], None)
+        if not segs and f['live']:  # still downloading: no keyframe index yet -> the file itself (served as it downloads)
+            return jok({'mode': 'direct', 'url': '/api/media/%d/file' % f['id'], 'start': start, 'offset': 0, 'duration': dur,
+                        'plan': dict(pl, mode='direct', reasons=pl.get('reasons', []) + ['downloading'])})
         if not segs and not f['live']:
             asyncio.ensure_future(library.ensure_kf(f['id']))
             # no keyframe index yet: quick 1080p transcode this time (indexing runs in the background)

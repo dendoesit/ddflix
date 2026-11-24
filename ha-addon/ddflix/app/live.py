@@ -110,6 +110,46 @@ async def tune(h, t):
         log.info('tune %s: %s', h[:8], config.mask(e)[:120])
 
 
+WATCH = {}       # torrent hash -> last time its bytes went to a player
+SLOW = 256 * 1024  # other running downloads while someone watches a downloading title
+_slow = set()
+
+
+async def available(f):
+    """Seconds playable from the start of a downloading file (contiguous downloaded bytes, proportional to the duration)."""
+    i = await info(f['live'], 3.0)
+    fi = file_of(i, f['path']) if i else None
+    if not fi or not i['piece'] or not fi['size']:
+        return None
+    if (i['t'].get('progress') or 0) >= 1:
+        return f['duration']
+    st, p = i['states'], fi['offset'] // i['piece']
+    p1 = (fi['offset'] + fi['size'] - 1) // i['piece']
+    while p <= p1 and p < len(st) and st[p] == 2:
+        p += 1
+    got = max(0, min(fi['size'], p * i['piece'] - fi['offset']))
+    return round((f['duration'] or 0) * got / fi['size'], 1)
+
+
+async def prioritize(ts):
+    """While a downloading title is being watched, the other running downloads slow down to SLOW so it gets the bandwidth."""
+    now = time.time()
+    watched = {h for h, t in WATCH.items() if now - t < 60}
+    want = {t['hash'] for t in ts if watched and t['hash'] not in watched and (t.get('progress') or 0) < 1} if watched else set()
+    add, rem = want - _slow, _slow - want
+    try:
+        if add:
+            await _q(lambda q: q.call('POST', 'torrents/setDownloadLimit', data={'hashes': '|'.join(add), 'limit': str(SLOW)}))
+        if rem:
+            await _q(lambda q: q.call('POST', 'torrents/setDownloadLimit', data={'hashes': '|'.join(rem), 'limit': '0'}))
+        if add or rem:
+            log.info('priority to the watched download: %d slowed, %d back to full speed', len(add), len(rem))
+        _slow.clear()
+        _slow.update(want)
+    except Exception as e:
+        log.info('prioritize: %s', config.mask(e)[:120])
+
+
 PLAY_CAP = 10 * 1024 * 1024  # while someone watches, torrents may not take the whole NIC (HA Green writes them to the NAS too)
 _cap = {'on': None}
 
@@ -135,6 +175,7 @@ async def job():
         ts = await _q(lambda q: q.list())
     except Exception:
         return
+    await prioritize(ts)
     rows = {r['hash']: r for r in db.q('SELECT * FROM download')}
     active = {}
     for t in ts:
@@ -221,7 +262,10 @@ async def serve(request, f):
     if partial:
         hdr['Content-Range'] = 'bytes %d-%d/%d' % (start, end - 1, size)
     resp = web.StreamResponse(status=206 if partial else 200, headers=hdr)
-    await resp.prepare(request)
+    try:
+        await resp.prepare(request)
+    except (ConnectionResetError, aiohttp.ClientConnectionResetError):
+        return resp  # the player gave up before the headers went out
     if request.method == 'HEAD':
         return resp
     loop = asyncio.get_running_loop()
@@ -265,9 +309,9 @@ async def _pump(request, resp, f, h, fi, start, end, read, loop):
             continue
         if not data:
             break
-        play.ACTIVE['at'] = time.time()
+        play.ACTIVE['at'] = WATCH[h] = time.time()
         try:
             await resp.write(data)
-        except ConnectionResetError:
+        except (ConnectionResetError, aiohttp.ClientConnectionResetError):
             return  # the player went away / seeked
         pos += len(data)
