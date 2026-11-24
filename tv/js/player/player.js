@@ -361,6 +361,18 @@
     }, function (e) { BF.log('player', 'subs err ' + e.message); if (P.st === st && st.sub === want) BF.toast(BF.t('p.suberr', { l: subLabel(key) })); });
   }
   // the server is still preparing / downloading subtitles (Romanian, English): refresh the list, switch to the preferred one
+  // seek thumbnails that are still being made on the server (a title that just finished downloading): picked up mid-film
+  function watchTrick(st, n) {
+    clearTimeout(st.trickW);
+    if (P.st !== st || !st.m || st.m.trickplay || n > 40) return;
+    st.trickW = setTimeout(function () {
+      if (P.st !== st) return;
+      A.media(st.m.id).then(function (x) {
+        if (P.st !== st) return;
+        if (x.trickplay) { st.m.trickplay = x.trickplay; st.trickBad = false; BF.log('player', 'trickplay ready'); } else watchTrick(st, n + 1);
+      }, function () { watchTrick(st, n + 1); });
+    }, 30000);
+  }
   function watchSubs(st, n) {
     n = n || 0;
     if (P.st !== st || n > 40) return;
@@ -468,7 +480,7 @@
       st.audio = ov ? ov.audio : (m.defaultAudio || 0);
       q('.p-title').textContent = o.title || m.title || '';
       q('.p-sub').textContent = m.season != null ? BF.t('meta.ep', { s: m.season, e: m.episode }) + (m.episodeName ? ' · ' + m.episodeName : '') : '';
-      subStyle(m.subStyle); loadSub(ov ? ov.sub : m.defaultSub); if (m.subsPending) watchSubs(st);
+      subStyle(m.subStyle); loadSub(ov ? ov.sub : m.defaultSub); if (m.subsPending) watchSubs(st); if (!m.trickplay) watchTrick(st, 0);
       var at = o.start != null ? o.start : (m.position > 30 && !m.watched ? Math.max(0, m.position - 3) : 0);
       // still downloading: never start past what is on disk (the player would wait forever for those bytes)
       if (m.downloading && m.availableSec != null && at > m.availableSec - 20) {
@@ -501,7 +513,7 @@
     var st = P.st; if (!st) return;
     saveProgress();
     dispatch({ type: 'close' });
-    clearInterval(pingT); clearInterval(progT); clearTimeout(C.hideT); clearTimeout(C.pendT); clearTimeout(st.subT); clearTimeout(st.subW); closeUn(false);
+    clearInterval(pingT); clearInterval(progT); clearTimeout(C.hideT); clearTimeout(C.pendT); clearTimeout(st.subT); clearTimeout(st.subW); clearTimeout(st.trickW); closeUn(false);
     if (C.sheet) BF.sheets.close();
     P.st = null; eng = null; clearInterval(stallT); q('.p-spin').classList.remove('on');
     box.className = 'off'; document.body.classList.remove('av-on'); document.body.classList.remove('p-open');

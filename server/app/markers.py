@@ -238,7 +238,21 @@ async def job():
     try:
         from . import play
         t0 = time.time()
-        while time.time() - t0 < 1500 and not play.busy():
+        while time.time() - t0 < 1500:
+            if play.busy():
+                # someone watches: only the title on screen gets its seek thumbnails (keyframes only, niced), nothing else
+                mid = play.ACTIVE.get('mid')
+                f = db.q1('SELECT * FROM media_file m WHERE id=? AND missing=0 AND live IS NULL AND duration > 60 AND NOT EXISTS '
+                          '(SELECT 1 FROM trick t WHERE t.media_id=m.id)', (mid,)) if mid else None
+                if not f:
+                    break
+                try:
+                    await make_trick(f)
+                    log.info('trickplay %s done (while watching)', f['id'])
+                except Exception as e:
+                    log.info('trickplay %s failed: %s', f['id'], str(e)[:200])
+                    db.x('INSERT OR REPLACE INTO trick(media_id, failed, done_at) VALUES(?,1,?)', (f['id'], db.now()))
+                continue
             f = db.q1('SELECT * FROM media_file m WHERE missing=0 AND live IS NULL AND season IS NOT NULL AND duration > 300 AND NOT EXISTS '
                       '(SELECT 1 FROM marker k WHERE k.media_id=m.id AND k.v=?) ORDER BY added_at DESC LIMIT 1', (V,))
             if f:

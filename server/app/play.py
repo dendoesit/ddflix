@@ -326,6 +326,7 @@ async def web_file(request):
     if not w or '/' in fn or '..' in fn:
         return jerr(404, 'session gone')
     w.last = time.time()
+    ACTIVE['mid'] = w.f['id']
     p = os.path.join(w.dir, fn)
     t0 = time.time()
     while not os.path.exists(p) or (fn == 'index.m3u8' and '#EXTINF' not in open(p, errors='ignore').read()):
@@ -451,6 +452,7 @@ async def hls(request):
     if not s:
         return jerr(404, 'session gone')
     s['last'] = time.time()
+    ACTIVE['mid'] = s['mid']
     pl = s['plan']
     if fn == 'master.m3u8':
         h = pl.get('height') or 1080
@@ -656,6 +658,7 @@ async def media_file_resp(request):
     f = media_file(int(request.match_info['mid']))
     if not f or not allowed_imdb(request, f['imdb']):
         return jerr(404, 'media not found')
+    ACTIVE['mid'] = f['id']
     if f['live'] and not os.path.exists(f['path']):
         from . import live
         return await live.serve(request, f)
